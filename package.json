@@ -1,0 +1,24 @@
+{
+  "name": "agentify-js",
+  "version": "1.0.0",
+  "description": "Modular AI Agent library for browser-based applications with streaming support, flexible tool management, and comprehensive error handling",
+  "type": "module",
+  "main": "agentify/index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "ai",
+    "agent",
+    "llm",
+    "openai",
+    "anthropic",
+    "gemini",
+    "streaming",
+    "tools"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {},
+  "devDependencies": {}
+}

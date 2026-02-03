@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Agentify.js - With Tools</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .content {
+            display: grid;
+            grid-template-columns: 1fr 2fr;
+            gap: 0;
+        }
+
+        .sidebar {
+            background: #f8f9fa;
+            padding: 30px;
+            border-right: 1px solid #e9ecef;
+        }
+
+        .main {
+            padding: 30px;
+        }
+
+        .tool-item {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            border: 2px solid #e9ecef;
+        }
+
+        .tool-item h4 {
+            color: #11998e;
+            margin-bottom: 8px;
+        }
+
+        .tool-item p {
+            font-size: 13px;
+            color: #6c757d;
+        }
+
+        .chat-box {
+            height: 400px;
+            overflow-y: auto;
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 20px;
+            background: #f8f9fa;
+        }
+
+        .message {
+            margin-bottom: 15px;
+            padding: 12px;
+            border-radius: 8px;
+        }
+
+        .message.user {
+            background: #11998e;
+            color: white;
+            margin-left: 20%;
+        }
+
+        .message.assistant {
+            background: white;
+            border: 2px solid #e9ecef;
+            margin-right: 20%;
+        }
+
+        .message.tool {
+            background: #fff3cd;
+            border: 2px solid #ffc107;
+            margin: 10px 10%;
+            font-family: monospace;
+            font-size: 12px;
+        }
+
+        .input-group {
+            display: flex;
+            gap: 10px;
+        }
+
+        .input-group input {
+            flex: 1;
+            padding: 12px;
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+        }
+
+        button {
+            padding: 12px 24px;
+            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+        }
+
+        .status {
+            padding: 12px;
+            background: #d1f2eb;
+            border-left: 4px solid #11998e;
+            border-radius: 4px;
+            margin-bottom: 20px;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🛠️ Agentify.js - With Tools</h1>
+            <p>AI Agent with custom tools example</p>
+        </div>
+
+        <div class="content">
+            <div class="sidebar">
+                <h3 style="margin-bottom: 20px;">Available Tools</h3>
+                
+                <div class="tool-item">
+                    <h4>📅 get_current_time</h4>
+                    <p>Get the current date and time</p>
+                </div>
+
+                <div class="tool-item">
+                    <h4>🧮 calculate</h4>
+                    <p>Perform mathematical calculations</p>
+                </div>
+
+                <div class="tool-item">
+                    <h4>🎲 random_number</h4>
+                    <p>Generate a random number</p>
+                </div>
+
+                <button onclick="initAgent()" style="width: 100%; margin-top: 20px;">
+                    Initialize Agent
+                </button>
+            </div>
+
+            <div class="main">
+                <div id="status" class="status" style="display: none;">
+                    Status: <span id="statusText">Ready</span>
+                </div>
+
+                <div id="chatBox" class="chat-box"></div>
+
+                <div class="input-group">
+                    <input type="text" id="messageInput" 
+                           placeholder="Try: What time is it? Calculate 15 * 23" 
+                           onkeypress="handleKeyPress(event)" disabled>
+                    <button onclick="sendMessage()" id="sendBtn" disabled>Send</button>
+                </div>
+
+                <div id="errors" style="margin-top: 20px;"></div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { Agentify } from '../agentify/index.js';
+
+        let agent = null;
+
+        window.initAgent = async function() {
+            const apiKey = prompt('Enter your OpenAI API key:');
+            if (!apiKey) return;
+
+            try {
+                agent = new Agentify({
+                    provider: 'openai',
+                    apiUrl: 'https://api.openai.com/v1/chat/completions',
+                    apiKey: apiKey,
+                    model: 'gpt-4',
+                    stream: true
+                });
+
+                agent.setInstruction('You are a helpful assistant with access to tools. Use them when appropriate.');
+
+                // Add tools
+                await agent.addTool({
+                    name: 'get_current_time',
+                    description: 'Get the current date and time',
+                    instruction: 'Use this tool when the user asks about the current time or date',
+                    parameters: {},
+                    execute: async () => {
+                        return {
+                            datetime: new Date().toISOString(),
+                            formatted: new Date().toLocaleString()
+                        };
+                    }
+                });
+
+                await agent.addTool({
+                    name: 'calculate',
+                    description: 'Perform a mathematical calculation',
+                    parameters: {
+                        expression: { type: 'string', required: true }
+                    },
+                    execute: async (params) => {
+                        try {
+                            const result = eval(params.expression);
+                            return { result, expression: params.expression };
+                        } catch (error) {
+                            return { error: 'Invalid expression' };
+                        }
+                    }
+                });
+
+                await agent.addTool({
+                    name: 'random_number',
+                    description: 'Generate a random number between min and max',
+                    parameters: {
+                        min: { type: 'number', required: true },
+                        max: { type: 'number', required: true }
+                    },
+                    execute: async (params) => {
+                        const random = Math.floor(Math.random() * (params.max - params.min + 1)) + params.min;
+                        return { number: random, min: params.min, max: params.max };
+                    }
+                });
+
+                // Subscribe to status
+                agent.onThinkingChange((status) => {
+                    const statusDiv = document.getElementById('status');
+                    const statusText = document.getElementById('statusText');
+                    
+                    if (status.isThinking) {
+                        statusDiv.style.display = 'block';
+                        statusText.textContent = status.currentAction || 'Processing...';
+                    } else {
+                        statusDiv.style.display = 'none';
+                    }
+                });
+
+                // Enable chat
+                document.getElementById('messageInput').disabled = false;
+                document.getElementById('sendBtn').disabled = false;
+
+                addMessage('Agent initialized with tools! Try asking: "What time is it?" or "Calculate 15 * 23"', 'assistant');
+
+            } catch (error) {
+                alert('Error: ' + error.message);
+            }
+        };
+
+        window.sendMessage = async function() {
+            const input = document.getElementById('messageInput');
+            const message = input.value.trim();
+            if (!message || !agent) return;
+
+            addMessage(message, 'user');
+            input.value = '';
+
+            try {
+                let assistantMessage = '';
+                const messageDiv = addMessage('', 'assistant');
+
+                await agent.chat(message, {
+                    onToken: (token) => {
+                        assistantMessage += token;
+                        messageDiv.textContent = assistantMessage;
+                    },
+                    onToolCall: (toolCall) => {
+                        addMessage(
+                            `🛠️ Tool Called: ${toolCall.name}\nArguments: ${JSON.stringify(toolCall.arguments, null, 2)}`,
+                            'tool'
+                        );
+                    },
+                    onError: (error) => {
+                        document.getElementById('errors').innerHTML = error.toHTML();
+                    }
+                });
+
+            } catch (error) {
+                console.error('Error:', error);
+            }
+        };
+
+        window.handleKeyPress = function(event) {
+            if (event.key === 'Enter') sendMessage();
+        };
+
+        function addMessage(text, role) {
+            const chatBox = document.getElementById('chatBox');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${role}`;
+            messageDiv.textContent = text;
+            chatBox.appendChild(messageDiv);
+            chatBox.scrollTop = chatBox.scrollHeight;
+            return messageDiv;
+        }
+    </script>
+</body>
+</html>

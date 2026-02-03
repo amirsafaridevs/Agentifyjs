@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Agentify.js - Streaming Demo</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Monaco', 'Courier New', monospace;
+            background: #1a1a2e;
+            color: #eee;
+            padding: 20px;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+            padding: 30px;
+            background: linear-gradient(135deg, #0f2027, #203a43, #2c5364);
+            border-radius: 12px;
+        }
+
+        .header h1 {
+            font-size: 36px;
+            margin-bottom: 10px;
+            color: #00ff88;
+            text-shadow: 0 0 10px rgba(0,255,136,0.5);
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+
+        .stat-box {
+            background: #16213e;
+            padding: 20px;
+            border-radius: 8px;
+            border: 1px solid #00ff88;
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 28px;
+            color: #00ff88;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+
+        .stat-label {
+            font-size: 12px;
+            color: #aaa;
+            text-transform: uppercase;
+        }
+
+        .stream-box {
+            background: #0d1117;
+            border: 2px solid #00ff88;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+            min-height: 300px;
+            max-height: 400px;
+            overflow-y: auto;
+            font-family: 'Monaco', 'Courier New', monospace;
+            line-height: 1.6;
+        }
+
+        .stream-box::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .stream-box::-webkit-scrollbar-track {
+            background: #16213e;
+        }
+
+        .stream-box::-webkit-scrollbar-thumb {
+            background: #00ff88;
+            border-radius: 4px;
+        }
+
+        .token {
+            display: inline;
+            animation: fadeIn 0.3s;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        .cursor {
+            display: inline-block;
+            width: 8px;
+            height: 16px;
+            background: #00ff88;
+            animation: blink 1s infinite;
+            margin-left: 2px;
+        }
+
+        @keyframes blink {
+            0%, 50% { opacity: 1; }
+            51%, 100% { opacity: 0; }
+        }
+
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        input {
+            flex: 1;
+            background: #16213e;
+            border: 2px solid #00ff88;
+            color: #eee;
+            padding: 15px;
+            border-radius: 8px;
+            font-family: inherit;
+            font-size: 14px;
+        }
+
+        button {
+            background: #00ff88;
+            color: #1a1a2e;
+            border: none;
+            padding: 15px 30px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: bold;
+            font-family: inherit;
+            transition: all 0.3s;
+        }
+
+        button:hover {
+            background: #00cc6f;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0,255,136,0.3);
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .thinking-status {
+            background: linear-gradient(90deg, #00ff88, #00cc6f);
+            color: #1a1a2e;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-weight: bold;
+            display: none;
+        }
+
+        .thinking-status.active {
+            display: block;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>⚡ STREAMING DEMO</h1>
+            <p>Real-time AI streaming with Agentify.js</p>
+        </div>
+
+        <div class="stats-grid">
+            <div class="stat-box">
+                <div class="stat-value" id="tokenCount">0</div>
+                <div class="stat-label">Tokens</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-value" id="speed">0</div>
+                <div class="stat-label">Tokens/sec</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-value" id="elapsed">0s</div>
+                <div class="stat-label">Elapsed</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-value" id="messages">0</div>
+                <div class="stat-label">Messages</div>
+            </div>
+        </div>
+
+        <div class="thinking-status" id="thinkingStatus">
+            🧠 Thinking...
+        </div>
+
+        <div class="stream-box" id="streamBox">
+            <div style="color: #00ff88;">$ Agentify Streaming Terminal</div>
+            <div style="color: #888; margin-bottom: 20px;">Initialize the agent and start chatting...</div>
+        </div>
+
+        <div class="controls">
+            <input type="text" id="messageInput" placeholder="Enter your message..." 
+                   onkeypress="handleKeyPress(event)" disabled>
+            <button onclick="sendMessage()" id="sendBtn" disabled>SEND</button>
+            <button onclick="initAgent()">INIT</button>
+        </div>
+    </div>
+
+    <script type="module">
+        import { Agentify } from '../agentify/index.js';
+
+        let agent = null;
+        let tokenCount = 0;
+        let startTime = null;
+        let messageCount = 0;
+        let elapsedInterval = null;
+
+        window.initAgent = async function() {
+            const apiKey = prompt('Enter your API key:');
+            if (!apiKey) return;
+
+            try {
+                agent = new Agentify({
+                    provider: 'openai',
+                    apiUrl: 'https://api.openai.com/v1/chat/completions',
+                    apiKey: apiKey,
+                    model: 'gpt-4',
+                    stream: true
+                });
+
+                agent.onThinkingChange((status) => {
+                    const thinkingDiv = document.getElementById('thinkingStatus');
+                    if (status.isThinking) {
+                        thinkingDiv.classList.add('active');
+                        thinkingDiv.textContent = `🧠 ${status.currentAction}`;
+                    } else {
+                        thinkingDiv.classList.remove('active');
+                    }
+                });
+
+                document.getElementById('messageInput').disabled = false;
+                document.getElementById('sendBtn').disabled = false;
+
+                appendToStream('\n✓ Agent initialized successfully!', '#00ff88');
+                appendToStream('\nType a message to start streaming...\n', '#888');
+
+            } catch (error) {
+                appendToStream('\n✗ Error: ' + error.message, '#ff4444');
+            }
+        };
+
+        window.sendMessage = async function() {
+            const input = document.getElementById('messageInput');
+            const message = input.value.trim();
+            if (!message || !agent) return;
+
+            appendToStream(`\n\n> ${message}\n`, '#00ff88');
+            input.value = '';
+
+            tokenCount = 0;
+            startTime = Date.now();
+            messageCount++;
+
+            startElapsedCounter();
+
+            try {
+                let responseText = '';
+                const responseLine = document.createElement('div');
+                responseLine.style.color = '#fff';
+                document.getElementById('streamBox').appendChild(responseLine);
+
+                const cursor = document.createElement('span');
+                cursor.className = 'cursor';
+                responseLine.appendChild(cursor);
+
+                await agent.chat(message, {
+                    onToken: (token) => {
+                        tokenCount++;
+                        responseText += token;
+
+                        // Remove cursor, add token, add cursor back
+                        cursor.remove();
+                        const tokenSpan = document.createElement('span');
+                        tokenSpan.className = 'token';
+                        tokenSpan.textContent = token;
+                        responseLine.appendChild(tokenSpan);
+                        responseLine.appendChild(cursor);
+
+                        updateStats();
+                        
+                        const box = document.getElementById('streamBox');
+                        box.scrollTop = box.scrollHeight;
+                    },
+                    onComplete: () => {
+                        cursor.remove();
+                        stopElapsedCounter();
+                        document.getElementById('messages').textContent = messageCount;
+                    }
+                });
+
+            } catch (error) {
+                appendToStream('\n✗ Error: ' + error.message, '#ff4444');
+                stopElapsedCounter();
+            }
+        };
+
+        window.handleKeyPress = function(event) {
+            if (event.key === 'Enter') sendMessage();
+        };
+
+        function appendToStream(text, color = '#fff') {
+            const box = document.getElementById('streamBox');
+            const div = document.createElement('div');
+            div.textContent = text;
+            div.style.color = color;
+            box.appendChild(div);
+            box.scrollTop = box.scrollHeight;
+        }
+
+        function updateStats() {
+            document.getElementById('tokenCount').textContent = tokenCount;
+            
+            const elapsed = (Date.now() - startTime) / 1000;
+            const speed = (tokenCount / elapsed).toFixed(1);
+            document.getElementById('speed').textContent = speed;
+        }
+
+        function startElapsedCounter() {
+            elapsedInterval = setInterval(() => {
+                const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+                document.getElementById('elapsed').textContent = elapsed + 's';
+            }, 100);
+        }
+
+        function stopElapsedCounter() {
+            if (elapsedInterval) {
+                clearInterval(elapsedInterval);
+                elapsedInterval = null;
+            }
+        }
+    </script>
+</body>
+</html>
