@@ -348,11 +348,128 @@ agent.clearTasks();
 ### Conversation History
 
 ```javascript
-// Get conversation history
+// Get current session history
 const history = agent.getHistory();
 
-// Clear history
+// Clear current session history
 agent.clearHistory();
+```
+
+### Chat History Management
+
+Agentify automatically saves complete chat history to localStorage and can send full conversation context to the model:
+
+```javascript
+// Initialize with history settings
+const agent = new Agentify({
+  provider: 'openai',
+  apiUrl: 'https://api.openai.com/v1/chat/completions',
+  apiKey: 'your-api-key',
+  model: 'gpt-4',
+  useHistory: true,              // Enable history saving (default: true)
+  includeHistory: true,          // Send history to model (default: true)
+  maxHistoryMessages: 50         // Max messages in context (default: 50)
+});
+
+// Or configure after initialization
+agent.setUseHistory(true);
+agent.setIncludeHistory(true);
+agent.setMaxHistoryMessages(100);
+
+// Start a new chat
+await agent.startNewChat('Hello!');
+
+// Continue an existing chat
+await agent.continueChat('chat_123', 'Continue our discussion');
+
+// Get chat history
+const chatHistory = agent.getChatHistory('chat_123');
+console.log('Messages:', chatHistory.messages);
+console.log('Message Count:', chatHistory.metadata.messageCount);
+
+// Get specific messages
+const lastTen = agent.getLastChatMessages('chat_123', 10);
+const filtered = agent.getChatMessages('chat_123', {
+  role: 'user',
+  limit: 20,
+  offset: 0
+});
+
+// Search in chat
+const results = agent.searchChatMessages('chat_123', 'keyword', {
+  role: 'assistant',
+  limit: 10
+});
+
+// Get all chat IDs
+const chatIds = agent.getAllHistoryChatIds();
+
+// Check if chat exists
+if (agent.chatHistoryExists('chat_123')) {
+  console.log('Chat exists!');
+}
+
+// Get message count
+const count = agent.getChatMessageCount('chat_123');
+
+// Export chat history
+const jsonData = agent.exportChatHistory('chat_123', 'json');
+const textData = agent.exportChatHistory('chat_123', 'text');
+const markdown = agent.exportChatHistory('chat_123', 'markdown');
+const html = agent.exportChatHistory('chat_123', 'html');
+
+// Import chat history
+agent.importChatHistory('chat_123', jsonData, 'json');
+
+// Clear specific chat
+agent.clearChatHistory('chat_123');
+
+// Clear all chats
+agent.clearAllChatHistories();
+
+// Get chat history statistics
+const stats = agent.getChatHistoryStats();
+console.log('Total Chats:', stats.totalChats);
+console.log('Total Messages:', stats.totalMessages);
+console.log('Storage Used:', stats.storageUsedFormatted);
+
+// Merge multiple chats
+agent.mergeChats('target_chat_id', ['source1', 'source2']);
+
+// Get context window (messages formatted for API)
+const context = agent.getContextWindow('chat_123', 30);
+```
+
+#### How History Works
+
+When `useHistory` and `includeHistory` are enabled (default):
+
+1. **User sends message** → Saved to localStorage under chat_id
+2. **Agent retrieves** → Last N messages from storage (configurable)
+3. **Sends to model** → Full conversation context included
+4. **Model responds** → Response also saved to storage
+5. **Next message** → Automatically includes previous context
+
+This allows the model to remember the entire conversation history, not just the last message!
+
+#### Example: Long Conversation
+
+```javascript
+const agent = new Agentify({
+  provider: 'openai',
+  apiKey: 'your-key',
+  model: 'gpt-4',
+  maxHistoryMessages: 100  // Include last 100 messages in context
+});
+
+// First message
+await agent.chat('My name is John', { chatId: 'chat_123' });
+
+// ... many messages later ...
+
+// Model still remembers your name!
+await agent.chat('What is my name?', { chatId: 'chat_123' });
+// Response: "Your name is John"
 ```
 
 ### Error Handling
@@ -558,6 +675,7 @@ Check out the `examples/` directory for complete working examples:
 - **streaming.html** - Real-time streaming demo
 - **error-handling.html** - Comprehensive error handling
 - **event-logging.html** - Event logging and tracking (فارسی)
+- **chat-history.html** - Full chat history management (فارسی)
 
 To run the examples:
 
@@ -578,7 +696,8 @@ agentify/
 ├── instructions/
 │   └── InstructionManager.js  # Instructions
 ├── storage/
-│   └── TaskManager.js         # Task persistence
+│   ├── TaskManager.js         # Task persistence
+│   └── ChatHistoryManager.js  # Chat history
 ├── streaming/
 │   └── StreamHandler.js       # Stream processing
 ├── thinking/

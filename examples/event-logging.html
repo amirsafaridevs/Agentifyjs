@@ -433,9 +433,9 @@
                 <div class="event-item">
                     <div class="event-header">
                         <span class="event-type">${getEventTypeLabel(event.type)}</span>
-                        <span class="event-time">${event.time}</span>
+                        <span class="event-time">${escapeHtml(event.time)}</span>
                     </div>
-                    ${event.chatId ? `<div class="chat-id">Chat: ${event.chatId.substring(0, 12)}...</div>` : ''}
+                    ${event.chatId ? `<div class="chat-id">Chat: ${escapeHtml(event.chatId.substring(0, 12))}...</div>` : ''}
                     <div class="event-data">${formatEventData(event)}</div>
                 </div>
             `).join('');
@@ -506,6 +506,13 @@
             });
         }
 
+        // HTML escape function to prevent XSS
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
         function getEventTypeLabel(type) {
             const labels = {
                 'user_message_sent': '📤 پیام کاربر',
@@ -520,23 +527,27 @@
                 'error_occurred': '⚠️ خطا',
                 'stream_started': '⚡ شروع Stream'
             };
-            return labels[type] || type;
+            return labels[type] || escapeHtml(type);
         }
 
         function formatEventData(event) {
             const data = event.data;
             
             if (event.type === 'user_message_sent') {
-                return `پیام: ${data.message.substring(0, 50)}${data.message.length > 50 ? '...' : ''}`;
+                const message = data.message || '';
+                const truncated = message.substring(0, 50);
+                return `پیام: ${escapeHtml(truncated)}${message.length > 50 ? '...' : ''}`;
             } else if (event.type === 'assistant_message_completed') {
-                return `پاسخ: ${data.message?.substring(0, 50) || 'N/A'}${data.message?.length > 50 ? '...' : ''}\nطول: ${data.messageLength} کاراکتر\nزمان: ${data.duration}ms`;
+                const message = data.message || 'N/A';
+                const truncated = message.substring(0, 50);
+                return `پاسخ: ${escapeHtml(truncated)}${message.length > 50 ? '...' : ''}\nطول: ${data.messageLength} کاراکتر\nزمان: ${data.duration}ms`;
             } else if (event.type === 'tool_call_completed') {
-                return `ابزار: ${data.toolName}\nپارامترها: ${JSON.stringify(data.parameters)}\nنتیجه: ${JSON.stringify(data.result).substring(0, 100)}`;
+                return `ابزار: ${escapeHtml(data.toolName)}\nپارامترها: ${escapeHtml(JSON.stringify(data.parameters))}\nنتیجه: ${escapeHtml(JSON.stringify(data.result).substring(0, 100))}`;
             } else if (event.type === 'api_request_sent') {
-                return `Endpoint: ${data.endpoint}\nBody Size: ${data.bodySize} bytes`;
+                return `Endpoint: ${escapeHtml(data.endpoint)}\nBody Size: ${data.bodySize} bytes`;
             }
             
-            return JSON.stringify(data, null, 2).substring(0, 200);
+            return escapeHtml(JSON.stringify(data, null, 2).substring(0, 200));
         }
 
         // Auto refresh every 2 seconds

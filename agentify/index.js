@@ -25,6 +25,7 @@ export { ErrorManager } from './errors/ErrorManager.js';
 export { ToolManager } from './tools/ToolManager.js';
 export { InstructionManager } from './instructions/InstructionManager.js';
 export { TaskManager } from './storage/TaskManager.js';
+export { ChatHistoryManager } from './storage/ChatHistoryManager.js';
 export { StreamHandler } from './streaming/StreamHandler.js';
 export { ThinkingTracker } from './thinking/ThinkingTracker.js';
 export { EventManager, EventTypes } from './events/EventManager.js';

@@ -3,6 +3,7 @@ import { ErrorManager } from '../errors/ErrorManager.js';
 import { ToolManager } from '../tools/ToolManager.js';
 import { InstructionManager } from '../instructions/InstructionManager.js';
 import { TaskManager } from '../storage/TaskManager.js';
+import { ChatHistoryManager } from '../storage/ChatHistoryManager.js';
 import { StreamHandler } from '../streaming/StreamHandler.js';
 import { ThinkingTracker } from '../thinking/ThinkingTracker.js';
 import { EventManager } from '../events/EventManager.js';
@@ -24,12 +25,18 @@ export class Agentify {
     this.toolManager = new ToolManager(this.errorManager);
     this.instructionManager = new InstructionManager(this.errorManager);
     this.taskManager = new TaskManager('agentify_tasks', this.errorManager);
+    this.chatHistoryManager = new ChatHistoryManager('agentify_chat_history', this.errorManager);
     this.streamHandler = new StreamHandler(this.errorManager);
     this.thinkingTracker = new ThinkingTracker();
     this.eventManager = new EventManager('agentify_events', this.errorManager);
 
-    // Conversation history
+    // Conversation history (current session - kept for backward compatibility)
     this.messages = [];
+    
+    // Chat history settings
+    this.useHistory = config.useHistory !== false; // Default: true
+    this.maxHistoryMessages = config.maxHistoryMessages || 50; // Default: 50 messages
+    this.includeHistory = config.includeHistory !== false; // Default: true
 
     // Provider adapter
     this.adapter = null;
@@ -196,8 +203,8 @@ export class Agentify {
     // Validate configuration
     this.configManager.validateRequired();
 
-    // Generate or use provided chat ID
-    const chatId = options.chatId || null;
+    // Generate or use provided chat ID, or keep existing one
+    const chatId = options.chatId || this.eventManager.getChatId() || this.eventManager.generateChatId();
     this.eventManager.setChatId(chatId);
 
     // Log user message
@@ -217,16 +224,39 @@ export class Agentify {
       this.thinkingTracker.startThinking('Preparing request');
       this.eventManager.logThinkingStarted('Preparing request', { chatId });
 
-      // Add message to history
-      if (typeof message === 'string') {
-        this.messages.push({ role: 'user', content: message });
+      // Add user message to current session
+      const userMessage = typeof message === 'string' 
+        ? { role: 'user', content: message }
+        : message;
+      
+      this.messages.push(userMessage);
+
+      // Save to persistent history if enabled
+      if (this.useHistory) {
+        this.chatHistoryManager.addMessage(chatId, userMessage);
+      }
+
+      // Build messages for API
+      let messagesToSend = [];
+      
+      if (this.includeHistory && this.useHistory) {
+        // Get full chat history from storage
+        const historyMessages = this.chatHistoryManager.getContextWindow(
+          chatId, 
+          this.maxHistoryMessages
+        );
+        messagesToSend = historyMessages;
       } else {
-        this.messages.push(message);
+        // Use only current session messages
+        messagesToSend = this.messages.map(msg => ({
+          role: msg.role,
+          content: msg.content
+        }));
       }
 
       // Format messages with system instruction
       const instruction = this.instructionManager.getInstruction();
-      const formattedMessages = formatMessages(this.messages, instruction);
+      const formattedMessages = formatMessages(messagesToSend, instruction);
 
       // Get tool definitions
       const tools = this.toolManager.getToolCount() > 0
@@ -361,12 +391,19 @@ export class Agentify {
       onComplete: (result) => {
         const duration = Date.now() - startTime;
         
-        // Add assistant message to history
+        // Add assistant message to current session
+        const assistantMessage = {
+          role: 'assistant',
+          content: result.content
+        };
+        
         if (result.content) {
-          this.messages.push({
-            role: 'assistant',
-            content: result.content
-          });
+          this.messages.push(assistantMessage);
+          
+          // Save to persistent history if enabled
+          if (this.useHistory) {
+            this.chatHistoryManager.addMessage(chatId, assistantMessage);
+          }
         }
 
         // Log assistant message completed
@@ -430,12 +467,19 @@ export class Agentify {
       { chatId }
     );
 
-    // Add assistant message to history
+    // Add assistant message to current session
+    const assistantMessage = {
+      role: 'assistant',
+      content: result.content
+    };
+    
     if (result.content) {
-      this.messages.push({
-        role: 'assistant',
-        content: result.content
-      });
+      this.messages.push(assistantMessage);
+      
+      // Save to persistent history if enabled
+      if (this.useHistory) {
+        this.chatHistoryManager.addMessage(chatId, assistantMessage);
+      }
     }
 
     // Log assistant message completed
@@ -681,6 +725,162 @@ export class Agentify {
    */
   generateNewChatId() {
     return this.eventManager.generateChatId();
+  }
+
+  // ==================== Chat History Management Methods ====================
+
+  /**
+   * Enable/disable history usage
+   */
+  setUseHistory(enabled) {
+    this.useHistory = enabled;
+    return this;
+  }
+
+  /**
+   * Set maximum history messages to include in context
+   */
+  setMaxHistoryMessages(max) {
+    this.maxHistoryMessages = max;
+    return this;
+  }
+
+  /**
+   * Enable/disable including history in API calls
+   */
+  setIncludeHistory(enabled) {
+    this.includeHistory = enabled;
+    return this;
+  }
+
+  /**
+   * Get chat history by ID
+   */
+  getChatHistory(chatId) {
+    return this.chatHistoryManager.getChatHistory(chatId);
+  }
+
+  /**
+   * Get messages from a chat
+   */
+  getChatMessages(chatId, options) {
+    return this.chatHistoryManager.getMessages(chatId, options);
+  }
+
+  /**
+   * Get last N messages from a chat
+   */
+  getLastChatMessages(chatId, count = 10) {
+    return this.chatHistoryManager.getLastMessages(chatId, count);
+  }
+
+  /**
+   * Clear chat history
+   */
+  clearChatHistory(chatId) {
+    return this.chatHistoryManager.clearChatHistory(chatId);
+  }
+
+  /**
+   * Clear all chat histories
+   */
+  clearAllChatHistories() {
+    return this.chatHistoryManager.clearAllHistories();
+  }
+
+  /**
+   * Get all chat IDs from history
+   */
+  getAllHistoryChatIds() {
+    return this.chatHistoryManager.getAllChatIds();
+  }
+
+  /**
+   * Check if chat exists in history
+   */
+  chatHistoryExists(chatId) {
+    return this.chatHistoryManager.chatExists(chatId);
+  }
+
+  /**
+   * Get message count for a chat
+   */
+  getChatMessageCount(chatId) {
+    return this.chatHistoryManager.getMessageCount(chatId);
+  }
+
+  /**
+   * Search messages in a chat
+   */
+  searchChatMessages(chatId, query, options) {
+    return this.chatHistoryManager.searchMessages(chatId, query, options);
+  }
+
+  /**
+   * Export chat history
+   */
+  exportChatHistory(chatId, format = 'json') {
+    return this.chatHistoryManager.exportChatHistory(chatId, format);
+  }
+
+  /**
+   * Import chat history
+   */
+  importChatHistory(chatId, data, format = 'json') {
+    return this.chatHistoryManager.importChatHistory(chatId, data, format);
+  }
+
+  /**
+   * Get chat history statistics
+   */
+  getChatHistoryStats() {
+    return this.chatHistoryManager.getStorageStats();
+  }
+
+  /**
+   * Load and continue existing chat
+   */
+  async continueChat(chatId, message, options = {}) {
+    // Set the chat ID
+    this.setChatId(chatId);
+    
+    // Load existing history into current session
+    const history = this.getChatHistory(chatId);
+    this.messages = history.messages.map(msg => ({
+      role: msg.role,
+      content: msg.content
+    }));
+
+    // Continue with the chat
+    return await this.chat(message, { ...options, chatId });
+  }
+
+  /**
+   * Start new chat (clears current session)
+   */
+  async startNewChat(message, options = {}) {
+    // Generate new chat ID
+    const chatId = this.generateNewChatId();
+    
+    // Clear current session
+    this.messages = [];
+    
+    // Start chat
+    return await this.chat(message, { ...options, chatId });
+  }
+
+  /**
+   * Merge multiple chats
+   */
+  mergeChats(targetChatId, sourceChatIds) {
+    return this.chatHistoryManager.mergeChats(targetChatId, sourceChatIds);
+  }
+
+  /**
+   * Get context window for a chat
+   */
+  getContextWindow(chatId, maxMessages = null) {
+    return this.chatHistoryManager.getContextWindow(chatId, maxMessages || this.maxHistoryMessages);
   }
 }
 
