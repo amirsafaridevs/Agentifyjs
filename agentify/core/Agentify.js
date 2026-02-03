@@ -5,6 +5,7 @@ import { InstructionManager } from '../instructions/InstructionManager.js';
 import { TaskManager } from '../storage/TaskManager.js';
 import { StreamHandler } from '../streaming/StreamHandler.js';
 import { ThinkingTracker } from '../thinking/ThinkingTracker.js';
+import { EventManager } from '../events/EventManager.js';
 import { OpenAIAdapter } from '../providers/OpenAIAdapter.js';
 import { AnthropicAdapter } from '../providers/AnthropicAdapter.js';
 import { GeminiAdapter } from '../providers/GeminiAdapter.js';
@@ -25,6 +26,7 @@ export class Agentify {
     this.taskManager = new TaskManager('agentify_tasks', this.errorManager);
     this.streamHandler = new StreamHandler(this.errorManager);
     this.thinkingTracker = new ThinkingTracker();
+    this.eventManager = new EventManager('agentify_events', this.errorManager);
 
     // Conversation history
     this.messages = [];
@@ -32,6 +34,12 @@ export class Agentify {
     // Provider adapter
     this.adapter = null;
     this.initializeAdapter();
+
+    // Log initialization
+    this.eventManager.logEvent('agent_initialized', {
+      config: this.configManager.getAll(),
+      timestamp: new Date().toISOString()
+    });
   }
 
   /**
@@ -188,6 +196,13 @@ export class Agentify {
     // Validate configuration
     this.configManager.validateRequired();
 
+    // Generate or use provided chat ID
+    const chatId = options.chatId || null;
+    this.eventManager.setChatId(chatId);
+
+    // Log user message
+    this.eventManager.logUserMessage(message, { chatId });
+
     // Create task
     const task = this.taskManager.addTask({
       type: 'chat',
@@ -195,9 +210,12 @@ export class Agentify {
       input: typeof message === 'string' ? message : JSON.stringify(message)
     });
 
+    const startTime = Date.now();
+
     try {
       // Update thinking status
       this.thinkingTracker.startThinking('Preparing request');
+      this.eventManager.logThinkingStarted('Preparing request', { chatId });
 
       // Add message to history
       if (typeof message === 'string') {
@@ -225,19 +243,33 @@ export class Agentify {
         startTime: new Date().toISOString()
       });
 
+      // Log API request
+      this.eventManager.logApiRequest(
+        config.apiUrl,
+        'POST',
+        { model: config.model, messages: formattedMessages.length, tools: tools?.length || 0 },
+        { chatId }
+      );
+
       // Make request
       this.thinkingTracker.setAction('Sending request to API');
       const response = await this.adapter.makeRequest(requestBody, config.stream);
 
+      // Log assistant message started
+      this.eventManager.logAssistantMessageStarted({ chatId });
+
       if (config.stream) {
         // Handle streaming response
-        return await this.handleStreamingResponse(response, task, options);
+        return await this.handleStreamingResponse(response, task, options, chatId, startTime);
       } else {
         // Handle non-streaming response
-        return await this.handleNonStreamingResponse(response, task, options);
+        return await this.handleNonStreamingResponse(response, task, options, chatId, startTime);
       }
 
     } catch (error) {
+      // Log error
+      this.eventManager.logError(error, 'chat', { chatId });
+
       // Update task with error
       this.taskManager.updateTaskStatus(task.id, 'failed', {
         error: error.toJSON ? error.toJSON() : { message: error.message },
@@ -259,13 +291,17 @@ export class Agentify {
   /**
    * Handle streaming response
    */
-  async handleStreamingResponse(response, task, options) {
+  async handleStreamingResponse(response, task, options, chatId, startTime) {
     this.thinkingTracker.setAction('Processing stream');
+    this.eventManager.logEvent('stream_started', { chatId });
 
     const provider = this.configManager.get('provider');
     
     const callbacks = {
       onToken: (token) => {
+        // Log token (optional - can generate many events)
+        // this.eventManager.logToken(token);
+        
         if (options.onToken) {
           options.onToken(token);
         }
@@ -273,19 +309,45 @@ export class Agentify {
       onToolCall: async (toolCall) => {
         this.thinkingTracker.setAction(`Executing tool: ${toolCall.name}`);
         
+        // Log tool call initiated
+        this.eventManager.logToolCallInitiated(
+          toolCall.name,
+          toolCall.arguments,
+          { chatId }
+        );
+        
         if (options.onToolCall) {
           options.onToolCall(toolCall);
         }
 
         // Execute tool if handler exists
         if (this.toolManager.hasTool(toolCall.name)) {
+          const toolStartTime = Date.now();
           try {
             const result = await this.toolManager.executeTool(
               toolCall.name,
               toolCall.arguments
             );
+            
+            // Log tool call completed
+            this.eventManager.logToolCallCompleted(
+              toolCall.name,
+              toolCall.arguments,
+              result.result,
+              Date.now() - toolStartTime,
+              { chatId }
+            );
+            
             return result;
           } catch (error) {
+            // Log tool call failed
+            this.eventManager.logToolCallFailed(
+              toolCall.name,
+              toolCall.arguments,
+              error,
+              { chatId }
+            );
+            
             console.error('Tool execution error:', error);
             throw error;
           }
@@ -297,6 +359,8 @@ export class Agentify {
         }
       },
       onComplete: (result) => {
+        const duration = Date.now() - startTime;
+        
         // Add assistant message to history
         if (result.content) {
           this.messages.push({
@@ -304,6 +368,22 @@ export class Agentify {
             content: result.content
           });
         }
+
+        // Log assistant message completed
+        this.eventManager.logAssistantMessageCompleted(
+          result.content,
+          duration,
+          { chatId, finishReason: result.finishReason }
+        );
+
+        // Log API response
+        this.eventManager.logApiResponse(
+          this.configManager.get('apiUrl'),
+          200,
+          { contentLength: result.content?.length || 0, finishReason: result.finishReason },
+          duration,
+          { chatId }
+        );
 
         // Update task
         this.taskManager.updateTaskStatus(task.id, 'completed', {
@@ -320,6 +400,8 @@ export class Agentify {
         }
       },
       onError: (error) => {
+        this.eventManager.logError(error, 'stream', { chatId });
+        
         if (options.onError) {
           options.onError(error);
         }
@@ -332,11 +414,21 @@ export class Agentify {
   /**
    * Handle non-streaming response
    */
-  async handleNonStreamingResponse(response, task, options) {
+  async handleNonStreamingResponse(response, task, options, chatId, startTime) {
     this.thinkingTracker.setAction('Parsing response');
 
     const data = await response.json();
     const result = this.adapter.parseResponse(data);
+    const duration = Date.now() - startTime;
+
+    // Log API response
+    this.eventManager.logApiResponse(
+      this.configManager.get('apiUrl'),
+      200,
+      { contentLength: result.content?.length || 0, toolCalls: result.toolCalls?.length || 0 },
+      duration,
+      { chatId }
+    );
 
     // Add assistant message to history
     if (result.content) {
@@ -346,19 +438,51 @@ export class Agentify {
       });
     }
 
+    // Log assistant message completed
+    this.eventManager.logAssistantMessageCompleted(
+      result.content,
+      duration,
+      { chatId, finishReason: result.finishReason }
+    );
+
     // Handle tool calls if present
     if (result.toolCalls && result.toolCalls.length > 0) {
       this.thinkingTracker.setAction('Processing tool calls');
       
       for (const toolCall of result.toolCalls) {
+        // Log tool call initiated
+        this.eventManager.logToolCallInitiated(
+          toolCall.name,
+          toolCall.arguments,
+          { chatId }
+        );
+        
         if (options.onToolCall) {
           options.onToolCall(toolCall);
         }
 
         if (this.toolManager.hasTool(toolCall.name)) {
+          const toolStartTime = Date.now();
           try {
-            await this.toolManager.executeTool(toolCall.name, toolCall.arguments);
+            const toolResult = await this.toolManager.executeTool(toolCall.name, toolCall.arguments);
+            
+            // Log tool call completed
+            this.eventManager.logToolCallCompleted(
+              toolCall.name,
+              toolCall.arguments,
+              toolResult.result,
+              Date.now() - toolStartTime,
+              { chatId }
+            );
           } catch (error) {
+            // Log tool call failed
+            this.eventManager.logToolCallFailed(
+              toolCall.name,
+              toolCall.arguments,
+              error,
+              { chatId }
+            );
+            
             console.error('Tool execution error:', error);
           }
         }
@@ -460,8 +584,103 @@ export class Agentify {
       hasInstruction: this.instructionManager.hasInstruction(),
       taskStats: this.taskManager.getStorageStats(),
       thinkingStatus: this.thinkingTracker.getStatus(),
-      errorCount: this.errorManager.getErrorLog().length
+      errorCount: this.errorManager.getErrorLog().length,
+      eventStats: this.eventManager.getStorageStats()
     };
+  }
+
+  // ==================== Event Management Methods ====================
+
+  /**
+   * Get all events with optional filtering
+   */
+  getEvents(filter) {
+    return this.eventManager.getEvents(filter);
+  }
+
+  /**
+   * Get events by chat ID
+   */
+  getEventsByChatId(chatId) {
+    return this.eventManager.getEventsByChatId(chatId);
+  }
+
+  /**
+   * Get events by type
+   */
+  getEventsByType(type) {
+    return this.eventManager.getEventsByType(type);
+  }
+
+  /**
+   * Get chat timeline
+   */
+  getChatTimeline(chatId) {
+    return this.eventManager.getChatTimeline(chatId);
+  }
+
+  /**
+   * Export events
+   */
+  exportEvents(format = 'json', filter = {}) {
+    return this.eventManager.exportEvents(format, filter);
+  }
+
+  /**
+   * Clear all events
+   */
+  clearEvents() {
+    return this.eventManager.clearEvents();
+  }
+
+  /**
+   * Delete events by chat ID
+   */
+  deleteEventsByChatId(chatId) {
+    return this.eventManager.deleteEventsByChatId(chatId);
+  }
+
+  /**
+   * Delete old events
+   */
+  deleteOldEvents(olderThan) {
+    return this.eventManager.deleteOldEvents(olderThan);
+  }
+
+  /**
+   * Get event statistics
+   */
+  getEventStats() {
+    return this.eventManager.getStorageStats();
+  }
+
+  /**
+   * Get all chat IDs
+   */
+  getChatIds() {
+    return this.eventManager.getChatIds();
+  }
+
+  /**
+   * Set chat ID for current conversation
+   */
+  setChatId(chatId) {
+    this.eventManager.setChatId(chatId);
+    return this;
+  }
+
+  /**
+   * Get current chat ID
+   */
+  getCurrentChatId() {
+    return this.eventManager.getChatId();
+  }
+
+  /**
+   * Generate new chat ID
+   */
+  generateNewChatId() {
+    return this.eventManager.generateChatId();
   }
 }
 

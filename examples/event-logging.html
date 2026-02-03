@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Agentify.js - Event Logging</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 28px;
+            margin-bottom: 10px;
+        }
+
+        .content {
+            display: grid;
+            grid-template-columns: 1fr 2fr;
+            gap: 0;
+            min-height: 600px;
+        }
+
+        .sidebar {
+            background: #f8f9fa;
+            padding: 20px;
+            border-left: 1px solid #e9ecef;
+            overflow-y: auto;
+            max-height: 700px;
+        }
+
+        .main {
+            padding: 20px;
+        }
+
+        .chat-section {
+            margin-bottom: 20px;
+        }
+
+        .chat-box {
+            height: 250px;
+            overflow-y: auto;
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 15px;
+            background: #f8f9fa;
+        }
+
+        .message {
+            margin-bottom: 10px;
+            padding: 10px;
+            border-radius: 8px;
+        }
+
+        .message.user {
+            background: #667eea;
+            color: white;
+            margin-right: 20%;
+        }
+
+        .message.assistant {
+            background: white;
+            border: 2px solid #e9ecef;
+            margin-left: 20%;
+        }
+
+        .input-group {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .input-group input {
+            flex: 1;
+            padding: 12px;
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+        }
+
+        button {
+            padding: 12px 24px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .stat-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 24px;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+
+        .stat-label {
+            font-size: 12px;
+            opacity: 0.9;
+        }
+
+        .event-list {
+            max-height: 550px;
+            overflow-y: auto;
+        }
+
+        .event-item {
+            background: white;
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 10px;
+            font-size: 13px;
+        }
+
+        .event-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+
+        .event-type {
+            font-weight: bold;
+            color: #667eea;
+            font-size: 11px;
+            text-transform: uppercase;
+        }
+
+        .event-time {
+            color: #6c757d;
+            font-size: 11px;
+        }
+
+        .event-data {
+            background: #f8f9fa;
+            padding: 8px;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 11px;
+            max-height: 100px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+
+        .chat-id {
+            background: #fff3cd;
+            color: #856404;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 10px;
+            display: inline-block;
+            margin-top: 5px;
+        }
+
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+
+        .controls button {
+            flex: 1;
+            min-width: 120px;
+        }
+
+        .filter-section {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+
+        .filter-section h4 {
+            margin-bottom: 10px;
+            color: #495057;
+        }
+
+        .filter-section select {
+            width: 100%;
+            padding: 8px;
+            border: 2px solid #e9ecef;
+            border-radius: 6px;
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📊 Event Logging سیستم</h1>
+            <p>ذخیره و مدیریت تمام رویدادهای سیستم</p>
+        </div>
+
+        <div class="content">
+            <div class="sidebar">
+                <div class="filter-section">
+                    <h4>فیلتر رویدادها</h4>
+                    <select id="eventTypeFilter" onchange="filterEvents()">
+                        <option value="">همه رویدادها</option>
+                        <option value="user_message_sent">پیام کاربر</option>
+                        <option value="assistant_message_completed">پاسخ مدل</option>
+                        <option value="tool_call_initiated">شروع ابزار</option>
+                        <option value="tool_call_completed">اتمام ابزار</option>
+                        <option value="api_request_sent">درخواست API</option>
+                        <option value="api_response_received">پاسخ API</option>
+                        <option value="error_occurred">خطا</option>
+                    </select>
+                    
+                    <select id="chatIdFilter" onchange="filterEvents()">
+                        <option value="">همه چت‌ها</option>
+                    </select>
+                </div>
+
+                <div class="controls">
+                    <button onclick="refreshEvents()">🔄 بروزرسانی</button>
+                    <button onclick="exportEvents()">💾 Export</button>
+                    <button onclick="clearEvents()" style="background: #dc3545;">🗑️ پاک کردن</button>
+                </div>
+
+                <div class="event-list" id="eventList">
+                    <p style="text-align: center; color: #6c757d; padding: 20px;">
+                        هنوز رویدادی ثبت نشده...
+                    </p>
+                </div>
+            </div>
+
+            <div class="main">
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-value" id="totalEvents">0</div>
+                        <div class="stat-label">کل رویدادها</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="currentChatId">-</div>
+                        <div class="stat-label">Chat ID فعلی</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="storageUsed">0 KB</div>
+                        <div class="stat-label">فضای استفاده شده</div>
+                    </div>
+                </div>
+
+                <div class="chat-section">
+                    <h3 style="margin-bottom: 15px;">💬 گفتگو با Agent</h3>
+                    
+                    <div class="chat-box" id="chatBox">
+                        <p style="color: #6c757d; text-align: center;">
+                            ابتدا Agent را مقداردهی اولیه کنید...
+                        </p>
+                    </div>
+
+                    <div class="input-group">
+                        <input type="text" id="messageInput" 
+                               placeholder="پیام خود را بنویسید..." 
+                               onkeypress="handleKeyPress(event)" disabled>
+                        <button onclick="sendMessage()" id="sendBtn" disabled>ارسال</button>
+                        <button onclick="newChat()">چت جدید</button>
+                    </div>
+
+                    <button onclick="initAgent()" style="width: 100%;">
+                        🚀 مقداردهی اولیه Agent
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { Agentify, EventTypes } from '../agentify/index.js';
+
+        let agent = null;
+        let currentFilter = {};
+
+        window.initAgent = async function() {
+            const apiKey = prompt('کلید API خود را وارد کنید:');
+            if (!apiKey) return;
+
+            try {
+                agent = new Agentify({
+                    provider: 'openai',
+                    apiUrl: 'https://api.openai.com/v1/chat/completions',
+                    apiKey: apiKey,
+                    model: 'gpt-4',
+                    stream: true
+                });
+
+                agent.setInstruction('شما یک دستیار هوشمند هستید.');
+
+                // Add a sample tool
+                await agent.addTool({
+                    name: 'get_time',
+                    description: 'دریافت زمان فعلی',
+                    parameters: {},
+                    execute: async () => {
+                        return {
+                            time: new Date().toLocaleTimeString('fa-IR'),
+                            date: new Date().toLocaleDateString('fa-IR')
+                        };
+                    }
+                });
+
+                document.getElementById('messageInput').disabled = false;
+                document.getElementById('sendBtn').disabled = false;
+
+                addChatMessage('Agent آماده است! شروع کنید...', 'assistant');
+                
+                refreshEvents();
+                updateChatIds();
+
+            } catch (error) {
+                alert('خطا: ' + error.message);
+            }
+        };
+
+        window.sendMessage = async function() {
+            if (!agent) return;
+
+            const input = document.getElementById('messageInput');
+            const message = input.value.trim();
+            if (!message) return;
+
+            addChatMessage(message, 'user');
+            input.value = '';
+
+            try {
+                let response = '';
+                const messageDiv = addChatMessage('', 'assistant');
+
+                await agent.chat(message, {
+                    onToken: (token) => {
+                        response += token;
+                        messageDiv.textContent = response;
+                    },
+                    onToolCall: (toolCall) => {
+                        console.log('Tool called:', toolCall.name);
+                    },
+                    onComplete: () => {
+                        refreshEvents();
+                    }
+                });
+
+            } catch (error) {
+                console.error('Error:', error);
+                addChatMessage('خطا: ' + error.message, 'assistant');
+            }
+        };
+
+        window.newChat = function() {
+            if (!agent) return;
+            
+            const newChatId = agent.generateNewChatId();
+            document.getElementById('chatBox').innerHTML = '';
+            addChatMessage(`چت جدید شروع شد (${newChatId.substring(0, 15)}...)`, 'assistant');
+            
+            updateChatIds();
+            refreshEvents();
+        };
+
+        window.refreshEvents = function() {
+            if (!agent) return;
+
+            const events = agent.getEvents(currentFilter);
+            const stats = agent.getEventStats();
+
+            // Update stats
+            document.getElementById('totalEvents').textContent = stats.totalEvents;
+            document.getElementById('storageUsed').textContent = stats.storageUsedFormatted;
+            
+            const currentChatId = agent.getCurrentChatId();
+            document.getElementById('currentChatId').textContent = 
+                currentChatId ? currentChatId.substring(0, 8) + '...' : '-';
+
+            // Display events
+            const eventList = document.getElementById('eventList');
+            if (events.length === 0) {
+                eventList.innerHTML = '<p style="text-align: center; color: #6c757d; padding: 20px;">رویدادی یافت نشد...</p>';
+                return;
+            }
+
+            eventList.innerHTML = events.reverse().map(event => `
+                <div class="event-item">
+                    <div class="event-header">
+                        <span class="event-type">${getEventTypeLabel(event.type)}</span>
+                        <span class="event-time">${event.time}</span>
+                    </div>
+                    ${event.chatId ? `<div class="chat-id">Chat: ${event.chatId.substring(0, 12)}...</div>` : ''}
+                    <div class="event-data">${formatEventData(event)}</div>
+                </div>
+            `).join('');
+        };
+
+        window.filterEvents = function() {
+            const typeFilter = document.getElementById('eventTypeFilter').value;
+            const chatIdFilter = document.getElementById('chatIdFilter').value;
+
+            currentFilter = {};
+            if (typeFilter) currentFilter.type = typeFilter;
+            if (chatIdFilter) currentFilter.chatId = chatIdFilter;
+
+            refreshEvents();
+        };
+
+        window.exportEvents = function() {
+            if (!agent) return;
+
+            const jsonData = agent.exportEvents('json', currentFilter);
+            const blob = new Blob([jsonData], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `events-${Date.now()}.json`;
+            a.click();
+            URL.revokeObjectURL(url);
+
+            alert('رویدادها با موفقیت Export شدند!');
+        };
+
+        window.clearEvents = function() {
+            if (!agent) return;
+            
+            if (confirm('آیا مطمئن هستید که می‌خواهید همه رویدادها را پاک کنید؟')) {
+                agent.clearEvents();
+                refreshEvents();
+                alert('رویدادها پاک شدند!');
+            }
+        };
+
+        window.handleKeyPress = function(event) {
+            if (event.key === 'Enter') sendMessage();
+        };
+
+        function addChatMessage(text, role) {
+            const chatBox = document.getElementById('chatBox');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${role}`;
+            messageDiv.textContent = text;
+            chatBox.appendChild(messageDiv);
+            chatBox.scrollTop = chatBox.scrollHeight;
+            return messageDiv;
+        }
+
+        function updateChatIds() {
+            if (!agent) return;
+
+            const chatIds = agent.getChatIds();
+            const select = document.getElementById('chatIdFilter');
+            
+            select.innerHTML = '<option value="">همه چت‌ها</option>';
+            chatIds.forEach(chatId => {
+                const option = document.createElement('option');
+                option.value = chatId;
+                option.textContent = chatId.substring(0, 20) + '...';
+                select.appendChild(option);
+            });
+        }
+
+        function getEventTypeLabel(type) {
+            const labels = {
+                'user_message_sent': '📤 پیام کاربر',
+                'assistant_message_started': '🤖 شروع پاسخ',
+                'assistant_message_completed': '✅ پاسخ کامل',
+                'tool_call_initiated': '🔧 شروع ابزار',
+                'tool_call_completed': '✔️ اتمام ابزار',
+                'tool_call_failed': '❌ خطای ابزار',
+                'api_request_sent': '📡 درخواست API',
+                'api_response_received': '📥 پاسخ API',
+                'thinking_started': '🧠 شروع تفکر',
+                'error_occurred': '⚠️ خطا',
+                'stream_started': '⚡ شروع Stream'
+            };
+            return labels[type] || type;
+        }
+
+        function formatEventData(event) {
+            const data = event.data;
+            
+            if (event.type === 'user_message_sent') {
+                return `پیام: ${data.message.substring(0, 50)}${data.message.length > 50 ? '...' : ''}`;
+            } else if (event.type === 'assistant_message_completed') {
+                return `پاسخ: ${data.message?.substring(0, 50) || 'N/A'}${data.message?.length > 50 ? '...' : ''}\nطول: ${data.messageLength} کاراکتر\nزمان: ${data.duration}ms`;
+            } else if (event.type === 'tool_call_completed') {
+                return `ابزار: ${data.toolName}\nپارامترها: ${JSON.stringify(data.parameters)}\nنتیجه: ${JSON.stringify(data.result).substring(0, 100)}`;
+            } else if (event.type === 'api_request_sent') {
+                return `Endpoint: ${data.endpoint}\nBody Size: ${data.bodySize} bytes`;
+            }
+            
+            return JSON.stringify(data, null, 2).substring(0, 200);
+        }
+
+        // Auto refresh every 2 seconds
+        setInterval(() => {
+            if (agent) {
+                refreshEvents();
+            }
+        }, 2000);
+    </script>
+</body>
+</html>

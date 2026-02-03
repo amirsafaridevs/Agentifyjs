@@ -207,6 +207,111 @@ const status = agent.getThinkingStatus();
 unsubscribe();
 ```
 
+### Event Logging
+
+All system events are automatically logged with complete details:
+
+```javascript
+// Get all events
+const events = agent.getEvents();
+
+// Filter events by type
+const userMessages = agent.getEventsByType('user_message_sent');
+const toolCalls = agent.getEventsByType('tool_call_completed');
+
+// Get events by chat ID
+const chatEvents = agent.getEventsByChatId('chat_123');
+
+// Filter with options
+const recentEvents = agent.getEvents({
+  type: 'assistant_message_completed',
+  since: '2024-01-01',
+  limit: 50
+});
+
+// Get chat timeline
+const timeline = agent.getChatTimeline('chat_123');
+
+// Get event statistics
+const stats = agent.getEventStats();
+console.log('Total Events:', stats.totalEvents);
+console.log('Storage Used:', stats.storageUsedFormatted);
+console.log('Unique Chats:', stats.uniqueChatIds);
+
+// Export events
+const jsonData = agent.exportEvents('json');
+const csvData = agent.exportEvents('csv');
+const htmlTable = agent.exportEvents('table');
+
+// Clear events
+agent.clearEvents();
+
+// Delete specific chat events
+agent.deleteEventsByChatId('chat_123');
+
+// Delete old events
+agent.deleteOldEvents('2024-01-01');
+```
+
+#### Managing Chat IDs
+
+```javascript
+// Generate new chat ID for new conversation
+const chatId = agent.generateNewChatId();
+
+// Set chat ID manually
+agent.setChatId('my-custom-chat-id');
+
+// Get current chat ID
+const currentChatId = agent.getCurrentChatId();
+
+// Get all chat IDs
+const allChatIds = agent.getChatIds();
+
+// Use specific chat ID for a message
+await agent.chat('Hello', { chatId: 'chat_123' });
+```
+
+#### Event Types
+
+The system logs these event types automatically:
+
+- `user_message_sent` - User sends a message
+- `assistant_message_started` - Assistant starts responding
+- `assistant_message_completed` - Assistant completes response
+- `assistant_token_received` - Token received (streaming)
+- `tool_call_initiated` - Tool execution starts
+- `tool_call_completed` - Tool execution completes
+- `tool_call_failed` - Tool execution fails
+- `thinking_started` - Thinking mode starts
+- `api_request_sent` - API request sent
+- `api_response_received` - API response received
+- `api_request_failed` - API request fails
+- `error_occurred` - Error occurs
+- `stream_started` - Streaming starts
+
+#### Event Structure
+
+Each event contains:
+
+```javascript
+{
+  id: 'evt_1234567890_abc123',
+  type: 'user_message_sent',
+  chatId: 'chat_1234567890_xyz789',
+  timestamp: '2024-01-15T10:30:00.000Z',
+  date: '1402/10/25',  // Persian date
+  time: '10:30:00',
+  unixTimestamp: 1705315800000,
+  data: {
+    // Event-specific data
+    message: 'Hello',
+    messageLength: 5,
+    metadata: {}
+  }
+}
+```
+
 ### Task Management
 
 ```javascript
@@ -452,6 +557,7 @@ Check out the `examples/` directory for complete working examples:
 - **with-tools.html** - Using custom tools
 - **streaming.html** - Real-time streaming demo
 - **error-handling.html** - Comprehensive error handling
+- **event-logging.html** - Event logging and tracking (فارسی)
 
 To run the examples:
 
@@ -477,6 +583,8 @@ agentify/
 │   └── StreamHandler.js       # Stream processing
 ├── thinking/
 │   └── ThinkingTracker.js     # Status tracking
+├── events/
+│   └── EventManager.js        # Event logging
 ├── errors/
 │   ├── ErrorManager.js        # Error handling
 │   └── ErrorTypes.js          # Error classes
