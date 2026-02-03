@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>DeepSeek API - Simple Test</title>
+    <style>
+        body { font-family: monospace; margin: 20px; }
+        input { width: 400px; padding: 8px; }
+        button { padding: 8px 16px; margin-left: 8px; }
+        pre { background: #f0f0f0; padding: 15px; overflow: auto; white-space: pre-wrap; }
+        .ok { color: green; }
+        .err { color: red; }
+    </style>
+</head>
+<body>
+    <h1>DeepSeek API – تست ساده (بدون Agentify)</h1>
+    <p>
+        <input type="text" id="apiKey" placeholder="DeepSeek API Key (sk-...)">
+        <button onclick="test1()">۱. تست بدون tools</button>
+        <button onclick="test2()">۲. تست با یک tool</button>
+    </p>
+    <h3>Response (ریسپانس سرور):</h3>
+    <p><strong>Status:</strong> <span id="status">-</span></p>
+    <p><strong>متن پاسخ (خام):</strong></p>
+    <pre id="raw">-</pre>
+    <p><strong>پارس‌شده (JSON):</strong></p>
+    <pre id="result">-</pre>
+    <p><strong>متن مدل (در صورت موفق):</strong></p>
+    <pre id="message">-</pre>
+
+    <script>
+        function getKey() {
+            const k = document.getElementById('apiKey').value.trim();
+            if (!k) {
+                alert('API Key را وارد کنید');
+                return null;
+            }
+            return k;
+        }
+
+        function showResponse(res, text, data) {
+            document.getElementById('status').textContent = res.status + ' ' + res.statusText;
+            document.getElementById('status').className = res.ok ? 'ok' : 'err';
+            document.getElementById('raw').textContent = text;
+            document.getElementById('result').textContent = typeof data === 'object' ? JSON.stringify(data, null, 2) : String(data);
+            const msg = data?.choices?.[0]?.message?.content;
+            document.getElementById('message').textContent = msg != null ? msg : (data?.error?.message || '-');
+        }
+
+        async function test1() {
+            const apiKey = getKey();
+            if (!apiKey) return;
+
+            document.getElementById('result').textContent = 'در حال ارسال...';
+            document.getElementById('raw').textContent = '...';
+            document.getElementById('message').textContent = '...';
+
+            const body = {
+                model: 'deepseek-chat',
+                messages: [{ role: 'user', content: 'Say hello in one word.' }],
+                max_tokens: 20
+            };
+
+            try {
+                const res = await fetch('https://api.deepseek.com/v1/chat/completions', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': 'Bearer ' + apiKey
+                    },
+                    body: JSON.stringify(body)
+                });
+
+                const text = await res.text();
+                let data;
+                try { data = JSON.parse(text); } catch { data = text; }
+                showResponse(res, text, data);
+            } catch (e) {
+                document.getElementById('status').textContent = 'خطا';
+                document.getElementById('status').className = 'err';
+                document.getElementById('raw').textContent = e.message;
+                document.getElementById('result').textContent = e.stack || e.message;
+                document.getElementById('message').textContent = '-';
+            }
+        }
+
+        async function test2() {
+            const apiKey = getKey();
+            if (!apiKey) return;
+
+            document.getElementById('result').textContent = 'در حال ارسال...';
+            document.getElementById('raw').textContent = '...';
+            document.getElementById('message').textContent = '...';
+
+            const body = {
+                model: 'deepseek-chat',
+                messages: [{ role: 'user', content: 'What is 2+2? Use the calculator.' }],
+                max_tokens: 100,
+                tools: [
+                    {
+                        type: 'function',
+                        function: {
+                            name: 'calculate',
+                            description: 'Do math',
+                            parameters: {
+                                type: 'object',
+                                properties: {
+                                    expression: { type: 'string' }
+                                },
+                                required: ['expression']
+                            }
+                        }
+                    }
+                ],
+                tool_choice: 'auto'
+            };
+
+            try {
+                const res = await fetch('https://api.deepseek.com/v1/chat/completions', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': 'Bearer ' + apiKey
+                    },
+                    body: JSON.stringify(body)
+                });
+
+                const text = await res.text();
+                let data;
+                try { data = JSON.parse(text); } catch { data = text; }
+                showResponse(res, text, data);
+            } catch (e) {
+                document.getElementById('status').textContent = 'خطا';
+                document.getElementById('status').className = 'err';
+                document.getElementById('raw').textContent = e.message;
+                document.getElementById('result').textContent = e.stack || e.message;
+                document.getElementById('message').textContent = '-';
+            }
+        }
+    </script>
+</body>
+</html>

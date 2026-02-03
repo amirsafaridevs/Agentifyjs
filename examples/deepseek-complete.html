@@ -1,0 +1,557 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DeepSeek Complete Test</title>
+    <style>
+        body { 
+            font-family: monospace; 
+            margin: 20px; 
+            background: #f5f5f5; 
+        }
+        .container { 
+            max-width: 1400px; 
+            margin: 0 auto; 
+            background: white; 
+            padding: 20px; 
+        }
+        .section { 
+            border: 1px solid #ddd; 
+            padding: 15px; 
+            margin: 10px 0; 
+        }
+        .section h3 { 
+            margin: 0 0 10px 0; 
+            border-bottom: 2px solid #333; 
+            padding-bottom: 5px; 
+        }
+        .grid { 
+            display: grid; 
+            grid-template-columns: 1fr 1fr; 
+            gap: 10px; 
+        }
+        .box { 
+            border: 1px solid #ccc; 
+            padding: 10px; 
+            background: #fafafa; 
+            height: 200px; 
+            overflow-y: auto; 
+            font-size: 12px; 
+        }
+        input, button { 
+            padding: 8px; 
+            margin: 5px 0; 
+            font-family: monospace; 
+        }
+        button { 
+            cursor: pointer; 
+            background: #333; 
+            color: white; 
+            border: none; 
+        }
+        button:hover { 
+            background: #555; 
+        }
+        .message { 
+            padding: 8px; 
+            margin: 5px 0; 
+            border-left: 3px solid #333; 
+        }
+        .user { 
+            background: #e3f2fd; 
+        }
+        .assistant { 
+            background: #f3e5f5; 
+        }
+        .stat { 
+            display: inline-block; 
+            padding: 5px 10px; 
+            background: #333; 
+            color: white; 
+            margin: 2px; 
+            font-size: 11px; 
+        }
+        .log { 
+            font-size: 10px; 
+            padding: 3px; 
+            border-bottom: 1px solid #eee; 
+        }
+        pre { 
+            background: #f5f5f5; 
+            padding: 5px; 
+            overflow-x: auto; 
+            font-size: 10px; 
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧪 DeepSeek Complete Test</h1>
+        
+        <div class="section">
+            <h3>⚙️ Configuration</h3>
+            <input type="text" id="apiKey" placeholder="Enter DeepSeek API Key (sk-...)" style="width: 400px;">
+            <button onclick="initAgent()">Initialize Agent</button>
+            <button onclick="loadHistory()">Load Pre-defined History</button>
+            <button onclick="clearAll()">Clear All</button>
+            <button onclick="testConnection()">Test API Connection</button>
+            <div id="status" style="margin-top: 10px;">ℹ️ Enter your DeepSeek API key and click Initialize</div>
+        </div>
+
+        <div class="section">
+            <h3>📊 Statistics</h3>
+            <div id="stats"></div>
+        </div>
+
+        <div class="section">
+            <h3>💬 Chat</h3>
+            <div id="thinking" style="padding: 5px; background: #fff3cd; display: none;"></div>
+            <div id="chatBox" class="box" style="height: 300px;"></div>
+            <input type="text" id="messageInput" placeholder="Try: 'Calculate 15*23' or 'What time is it?' or 'What is fibonacci of 10?'" style="width: 70%;" disabled>
+            <button onclick="sendMessage()" id="sendBtn" disabled>Send</button>
+            <button onclick="quickTest()" id="quickTestBtn" disabled>Quick Test</button>
+        </div>
+
+        <div class="grid">
+            <div class="section">
+                <h3>🔧 Tools (3 available)</h3>
+                <div id="toolsList" class="box"></div>
+            </div>
+
+            <div class="section">
+                <h3>📋 Tasks</h3>
+                <div id="tasksList" class="box"></div>
+            </div>
+
+            <div class="section">
+                <h3>📝 Events Log</h3>
+                <div id="eventsList" class="box"></div>
+            </div>
+
+            <div class="section">
+                <h3>💾 Chat History</h3>
+                <div id="historyList" class="box"></div>
+            </div>
+        </div>
+
+        <div class="section">
+            <h3>🐛 Error Log</h3>
+            <div id="errorLog" class="box" style="height: 150px;"></div>
+        </div>
+
+        <div class="section">
+            <h3>📄 Raw Data</h3>
+            <button onclick="showRawData('events')">Show Events JSON</button>
+            <button onclick="showRawData('tasks')">Show Tasks JSON</button>
+            <button onclick="showRawData('history')">Show History JSON</button>
+            <button onclick="showRawData('config')">Show Config JSON</button>
+            <pre id="rawData"></pre>
+        </div>
+    </div>
+
+    <script type="module">
+        import { Agentify } from '../agentify/index.js';
+
+        let agent = null;
+        let currentChatId = 'deepseek_test_chat';
+
+        // Pre-defined test history
+        const testHistory = [
+            { role: 'user', content: 'Hello! My name is John and I am a software developer.' },
+            { role: 'assistant', content: 'Hello John! Nice to meet you. How can I help you today?' },
+            { role: 'user', content: 'I am working on a JavaScript project.' },
+            { role: 'assistant', content: 'That sounds interesting! What kind of JavaScript project are you working on?' },
+            { role: 'user', content: 'I need help with calculating fibonacci numbers.' },
+            { role: 'assistant', content: 'I can help you with that! Would you like me to calculate a fibonacci number for you?' }
+        ];
+
+        window.initAgent = async function() {
+            const apiKey = document.getElementById('apiKey').value;
+            if (!apiKey) {
+                alert('Please enter API key');
+                return;
+            }
+
+            try {
+                agent = new Agentify({
+                    provider: 'deepseek',
+                    apiUrl: 'https://api.deepseek.com/v1/chat/completions',
+                    apiKey: apiKey,
+                    model: 'deepseek-chat',
+                    stream: true,
+                    temperature: 0.7,
+                    maxTokens: 4000,
+                    useHistory: true,
+                    includeHistory: true,
+                    maxHistoryMessages: 50
+                });
+
+                // Set system instruction
+                await agent.setInstruction('You are a helpful AI assistant with access to tools. When the user asks for calculations, time, or fibonacci numbers, use the appropriate tool.');
+
+                // Add Tool 1: Calculator
+                await agent.addTool({
+                    name: 'calculate',
+                    description: 'Perform mathematical calculations',
+                    instruction: 'Use this tool when user asks for math operations. Support +, -, *, /, %, **',
+                    parameters: {
+                        expression: { type: 'string', required: true }
+                    },
+                    execute: async (params) => {
+                        const expr = params && (params.expression != null) ? String(params.expression) : '';
+                        if (!expr.trim()) {
+                            return { error: 'Missing expression' };
+                        }
+                        try {
+                            const result = eval(expr);
+                            logToBox('toolsList', `✅ calculate: ${expr} = ${result}`);
+                            return { result, expression: expr };
+                        } catch (e) {
+                            return { error: 'Invalid expression: ' + (e.message || 'eval failed') };
+                        }
+                    }
+                });
+
+                // Add Tool 2: Get Current Time
+                await agent.addTool({
+                    name: 'get_current_time',
+                    description: 'Get current date and time',
+                    instruction: 'Use this when user asks about current time or date',
+                    parameters: {},
+                    execute: async () => {
+                        const now = new Date();
+                        const result = {
+                            timestamp: now.toISOString(),
+                            date: now.toLocaleDateString(),
+                            time: now.toLocaleTimeString()
+                        };
+                        logToBox('toolsList', `✅ get_current_time: ${result.time}`);
+                        return result;
+                    }
+                });
+
+                // Add Tool 3: Fibonacci
+                await agent.addTool({
+                    name: 'fibonacci',
+                    description: 'Calculate fibonacci number at position N',
+                    instruction: 'Use this when user asks for fibonacci sequence or fibonacci number',
+                    parameters: {
+                        n: { type: 'number', required: true }
+                    },
+                    execute: async (params) => {
+                        const fib = (n) => n <= 1 ? n : fib(n - 1) + fib(n - 2);
+                        const result = fib(params.n);
+                        logToBox('toolsList', `✅ fibonacci(${params.n}) = ${result}`);
+                        return { position: params.n, result };
+                    }
+                });
+
+                // Subscribe to thinking status
+                agent.onThinkingChange((status) => {
+                    const thinkingDiv = document.getElementById('thinking');
+                    if (status.isThinking) {
+                        thinkingDiv.style.display = 'block';
+                        thinkingDiv.textContent = `🧠 ${status.currentAction} (${status.elapsedTime}ms)`;
+                    } else {
+                        thinkingDiv.style.display = 'none';
+                    }
+                });
+
+                // Set chat ID
+                agent.setChatId(currentChatId);
+
+                document.getElementById('messageInput').disabled = false;
+                document.getElementById('sendBtn').disabled = false;
+                document.getElementById('quickTestBtn').disabled = false;
+                document.getElementById('status').innerHTML = '✅ <b>Agent Initialized!</b> Click "Load Pre-defined History" or start chatting.';
+
+                logToBox('toolsList', '📌 3 tools registered');
+                updateStats();
+                startAutoRefresh();
+
+            } catch (error) {
+                console.error('Initialization error:', error);
+                logError(error);
+                document.getElementById('status').innerHTML = '❌ <b>Initialization failed!</b><br>' + error.message;
+                
+                // Show detailed error
+                if (error.details) {
+                    console.error('Error details:', error.details);
+                }
+            }
+        };
+
+        window.loadHistory = async function() {
+            if (!agent) {
+                alert('Initialize agent first!');
+                return;
+            }
+
+            // Load pre-defined history
+            agent.chatHistoryManager.updateChatHistory(currentChatId, testHistory);
+            
+            // Display in chat box
+            const chatBox = document.getElementById('chatBox');
+            chatBox.innerHTML = '';
+            testHistory.forEach(msg => {
+                addMessageToChat(msg.content, msg.role);
+            });
+
+            updateStats();
+            document.getElementById('status').innerHTML = '✅ <b>Pre-defined history loaded!</b>';
+        };
+
+        window.quickTest = async function() {
+            if (!agent) return;
+            
+            const testMessages = [
+                'What is my name?',
+                'Calculate 25 * 4',
+                'What is fibonacci of 8?'
+            ];
+            
+            for (const msg of testMessages) {
+                document.getElementById('messageInput').value = msg;
+                await sendMessage();
+                await new Promise(resolve => setTimeout(resolve, 3000));
+            }
+        };
+
+        window.sendMessage = async function() {
+            if (!agent) return;
+
+            const input = document.getElementById('messageInput');
+            const message = input.value.trim();
+            if (!message) return;
+
+            addMessageToChat(message, 'user');
+            input.value = '';
+
+            try {
+                console.log('Sending message:', message);
+                let response = '';
+                const msgDiv = addMessageToChat('', 'assistant');
+
+                await agent.chat(message, {
+                    chatId: currentChatId,
+                    onToken: (token) => {
+                        response += token;
+                        msgDiv.textContent = response;
+                    },
+                    onToolCall: (toolCall) => {
+                        logToBox('toolsList', `🔧 Calling: ${toolCall.name}`);
+                    },
+                    onComplete: (result) => {
+                        updateStats();
+                        logToBox('eventsList', `✅ Message completed in ${Date.now()}ms`);
+                    },
+                    onError: (error) => {
+                        logError(error);
+                    }
+                });
+
+            } catch (error) {
+                console.error('Chat error:', error);
+                logError(error);
+
+                let errorMsg = 'Error: ' + error.message;
+                const rb = error.details?.responseBody;
+                if (rb?.error?.message) {
+                    errorMsg += '\n\nServer: ' + rb.error.message;
+                }
+                if (error.code) {
+                    errorMsg += '\n(Code: ' + error.code + ')';
+                }
+                addMessageToChat(errorMsg, 'assistant');
+            }
+        };
+
+        window.clearAll = function() {
+            if (!agent) return;
+            
+            if (confirm('Clear all data?')) {
+                agent.clearHistory();
+                agent.clearTasks();
+                agent.clearEvents();
+                agent.clearChatHistory(currentChatId);
+                document.getElementById('chatBox').innerHTML = '';
+                document.getElementById('tasksList').innerHTML = '';
+                document.getElementById('eventsList').innerHTML = '';
+                document.getElementById('historyList').innerHTML = '';
+                updateStats();
+            }
+        };
+
+        window.testConnection = async function() {
+            const apiKey = document.getElementById('apiKey').value;
+            if (!apiKey) {
+                alert('Please enter API key first');
+                return;
+            }
+
+            document.getElementById('status').innerHTML = '🔄 Testing connection...';
+
+            try {
+                const response = await fetch('https://api.deepseek.com/v1/chat/completions', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${apiKey}`
+                    },
+                    body: JSON.stringify({
+                        model: 'deepseek-chat',
+                        messages: [{ role: 'user', content: 'Hello' }],
+                        max_tokens: 10
+                    })
+                });
+
+                const data = await response.json();
+                
+                if (response.ok) {
+                    document.getElementById('status').innerHTML = '✅ <b>Connection successful!</b> You can now initialize the agent.';
+                    console.log('Test response:', data);
+                } else {
+                    document.getElementById('status').innerHTML = `❌ <b>Connection failed!</b><br>Status: ${response.status}<br>Error: ${data.error?.message || JSON.stringify(data)}`;
+                    console.error('Test failed:', data);
+                }
+            } catch (error) {
+                document.getElementById('status').innerHTML = '❌ <b>Connection error!</b><br>' + error.message;
+                console.error('Test error:', error);
+            }
+        };
+
+        window.showRawData = function(type) {
+            if (!agent) return;
+
+            const rawDiv = document.getElementById('rawData');
+            let data;
+
+            switch(type) {
+                case 'events':
+                    data = agent.getEvents({ limit: 20 });
+                    break;
+                case 'tasks':
+                    data = agent.getTasks();
+                    break;
+                case 'history':
+                    data = agent.getChatHistory(currentChatId);
+                    break;
+                case 'config':
+                    data = agent.getStatus();
+                    break;
+            }
+
+            rawDiv.textContent = JSON.stringify(data, null, 2);
+        };
+
+        function addMessageToChat(text, role) {
+            const chatBox = document.getElementById('chatBox');
+            const msgDiv = document.createElement('div');
+            msgDiv.className = `message ${role}`;
+            msgDiv.textContent = text;
+            chatBox.appendChild(msgDiv);
+            chatBox.scrollTop = chatBox.scrollHeight;
+            return msgDiv;
+        }
+
+        function logToBox(boxId, message) {
+            const box = document.getElementById(boxId);
+            const logDiv = document.createElement('div');
+            logDiv.className = 'log';
+            logDiv.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            box.appendChild(logDiv);
+            box.scrollTop = box.scrollHeight;
+
+            // Keep only last 50 logs
+            while (box.children.length > 50) {
+                box.removeChild(box.firstChild);
+            }
+        }
+
+        function logError(error) {
+            const errorLog = document.getElementById('errorLog');
+            const errorDiv = document.createElement('div');
+            errorDiv.style.color = 'red';
+            errorDiv.textContent = `[${new Date().toLocaleTimeString()}] ${error.message || error}`;
+            errorLog.appendChild(errorDiv);
+            errorLog.scrollTop = errorLog.scrollHeight;
+        }
+
+        function updateStats() {
+            if (!agent) return;
+
+            const stats = agent.getStatus();
+            const statsDiv = document.getElementById('stats');
+
+            statsDiv.innerHTML = `
+                <span class="stat">Messages: ${stats.messageCount}</span>
+                <span class="stat">Tools: ${stats.toolCount}</span>
+                <span class="stat">Tasks: ${stats.taskStats.totalTasks}</span>
+                <span class="stat">Events: ${stats.eventStats.totalEvents}</span>
+                <span class="stat">Storage: ${stats.eventStats.storageUsedFormatted}</span>
+                <span class="stat">Chat History: ${stats.config.useHistory ? 'ON' : 'OFF'}</span>
+                <span class="stat">Stream: ${stats.config.stream ? 'ON' : 'OFF'}</span>
+            `;
+
+            // Update tasks list
+            const tasks = agent.getTasks();
+            const tasksList = document.getElementById('tasksList');
+            tasksList.innerHTML = tasks.slice(-10).map(task => 
+                `<div class="log">[${task.status}] ${task.type} - ${new Date(task.timestamp).toLocaleTimeString()}</div>`
+            ).join('');
+
+            // Update events list
+            const events = agent.getEvents({ limit: 20 });
+            const eventsList = document.getElementById('eventsList');
+            eventsList.innerHTML = events.reverse().map(event => 
+                `<div class="log">[${event.type}] ${event.time}</div>`
+            ).join('');
+
+            // Update history list
+            const history = agent.getChatHistory(currentChatId);
+            const historyList = document.getElementById('historyList');
+            historyList.innerHTML = `
+                <div class="log">Chat ID: ${currentChatId}</div>
+                <div class="log">Messages: ${history.messages.length}</div>
+                <div class="log">Created: ${new Date(history.metadata.createdAt).toLocaleString()}</div>
+                <div class="log">Updated: ${new Date(history.metadata.updatedAt).toLocaleString()}</div>
+            `;
+
+            // Update error log from events (ERROR_OCCURRED, TOOL_CALL_FAILED)
+            const allEvents = agent.getEvents({ limit: 100 });
+            const errorEvents = allEvents.filter(e => e.type === 'ERROR_OCCURRED' || e.type === 'TOOL_CALL_FAILED');
+            const errorLog = document.getElementById('errorLog');
+            errorLog.innerHTML = errorEvents.slice(0, 15).map(e => {
+                const raw = e.data?.error ?? e.data?.errorMessage ?? e.type;
+                const msg = typeof raw === 'object' ? (raw.message || JSON.stringify(raw)) : String(raw);
+                const time = e.time || e.data?.timestamp || '';
+                return `<div class="log" style="color:red">[${time}] ${e.type}: ${msg}</div>`;
+            }).join('') || '<div class="log">No errors logged</div>';
+        }
+
+        function startAutoRefresh() {
+            setInterval(() => {
+                if (agent) {
+                    updateStats();
+                }
+            }, 2000);
+        }
+
+        // Enter key to send message
+        document.getElementById('messageInput').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter' && !this.disabled) {
+                sendMessage();
+            }
+        });
+
+        // Auto-load if API key is in URL (for testing)
+        const urlParams = new URLSearchParams(window.location.search);
+        const apiKeyParam = urlParams.get('apiKey');
+        if (apiKeyParam) {
+            document.getElementById('apiKey').value = apiKeyParam;
+            setTimeout(() => initAgent(), 500);
+        }
+    </script>
+</body>
+</html>

@@ -135,30 +135,30 @@ export class ToolManager {
         return tools.map(tool => ({
           type: 'function',
           function: {
-            name: tool.name,
-            description: tool.description + (tool.instruction ? `\n\n${tool.instruction}` : ''),
+            name: tool.name || '',
+            description: (tool.description || '') + (tool.instruction ? `\n\n${tool.instruction}` : ''),
             parameters: formatToolParameters(tool.parameters)
           }
         }));
       
       case 'anthropic':
         return tools.map(tool => ({
-          name: tool.name,
-          description: tool.description + (tool.instruction ? `\n\n${tool.instruction}` : ''),
+          name: tool.name || '',
+          description: (tool.description || '') + (tool.instruction ? `\n\n${tool.instruction}` : ''),
           input_schema: formatToolParameters(tool.parameters)
         }));
       
       case 'gemini':
         return tools.map(tool => ({
-          name: tool.name,
-          description: tool.description + (tool.instruction ? `\n\n${tool.instruction}` : ''),
+          name: tool.name || '',
+          description: (tool.description || '') + (tool.instruction ? `\n\n${tool.instruction}` : ''),
           parameters: formatToolParameters(tool.parameters)
         }));
       
       default:
         return tools.map(tool => ({
-          name: tool.name,
-          description: tool.description + (tool.instruction ? `\n\n${tool.instruction}` : ''),
+          name: tool.name || '',
+          description: (tool.description || '') + (tool.instruction ? `\n\n${tool.instruction}` : ''),
           parameters: formatToolParameters(tool.parameters)
         }));
     }
@@ -252,6 +252,9 @@ export class ToolManager {
               actualType
             }
           );
+        }
+        if (expectedType === 'string' && actualType === 'number') {
+          parameters[key] = String(value);
         } else if (expectedType !== 'array' && actualType !== expectedType) {
           throw this.errorManager.createToolError(
             `Parameter ${key} has wrong type`,

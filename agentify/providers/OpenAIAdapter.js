@@ -28,17 +28,23 @@ export class OpenAIAdapter extends BaseAdapter {
   }
 
   /**
-   * Format tools for OpenAI
+   * Format tools for OpenAI / DeepSeek (accepts both flat and nested tool definitions)
    */
   formatTools(tools) {
-    return tools.map(tool => ({
-      type: 'function',
-      function: {
-        name: tool.name,
-        description: tool.description,
-        parameters: tool.parameters || { type: 'object', properties: {} }
-      }
-    }));
+    return tools.map(tool => {
+      const fn = tool.function || tool;
+      const name = fn.name ?? tool.name ?? '';
+      const description = fn.description ?? tool.description ?? '';
+      const parameters = fn.parameters ?? tool.parameters ?? { type: 'object', properties: {} };
+      return {
+        type: 'function',
+        function: {
+          name,
+          description,
+          parameters
+        }
+      };
+    });
   }
 
   /**

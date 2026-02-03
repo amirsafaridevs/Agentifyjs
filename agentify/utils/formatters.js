@@ -2,7 +2,7 @@
  * Format tool parameters for API calls
  */
 export function formatToolParameters(parameters) {
-  if (!parameters || typeof parameters !== 'object') {
+  if (!parameters || typeof parameters !== 'object' || Object.keys(parameters).length === 0) {
     return { type: 'object', properties: {} };
   }
 
@@ -14,8 +14,14 @@ export function formatToolParameters(parameters) {
 
   for (const [key, value] of Object.entries(parameters)) {
     if (typeof value === 'object' && value !== null) {
-      formatted.properties[key] = value;
-      if (value.required === true) {
+      // Check if it has 'required' field and extract it
+      const isRequired = value.required === true;
+      
+      // Create a clean copy without the 'required' field
+      const { required, ...cleanValue } = value;
+      formatted.properties[key] = cleanValue;
+      
+      if (isRequired) {
         formatted.required.push(key);
       }
     } else {

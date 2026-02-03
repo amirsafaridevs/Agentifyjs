@@ -497,11 +497,13 @@ export class ChatHistoryManager {
       messages = messages.slice(-maxMessages);
     }
 
-    // Return only role and content (clean format for API)
-    return messages.map(msg => ({
-      role: msg.role,
-      content: msg.content
-    }));
+    // Return messages with all necessary fields for API
+    return messages.map(msg => {
+      const formatted = { role: msg.role, content: msg.content };
+      if (msg.tool_calls) formatted.tool_calls = msg.tool_calls;
+      if (msg.tool_call_id) formatted.tool_call_id = msg.tool_call_id;
+      return formatted;
+    });
   }
 }
 

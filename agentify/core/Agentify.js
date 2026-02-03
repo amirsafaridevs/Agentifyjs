@@ -197,22 +197,38 @@ export class Agentify {
    * Main chat method with streaming support
    */
   async chat(message, options = {}) {
-    // Validate message
-    validateMessage(message);
+    // Skip validation for tool followup (message can be empty)
+    if (!options._isToolFollowUp) {
+      validateMessage(message);
+    }
 
     // Validate configuration
     this.configManager.validateRequired();
+
+    // Prevent infinite tool call loops
+    const maxToolRounds = options.maxToolRounds || 10;
+    const currentRound = options._toolRound || 0;
+    
+    if (currentRound >= maxToolRounds) {
+      throw this.errorManager.createSystemError(
+        `Maximum tool call rounds (${maxToolRounds}) exceeded`,
+        'MAX_TOOL_ROUNDS_EXCEEDED',
+        { maxToolRounds, currentRound }
+      );
+    }
 
     // Generate or use provided chat ID, or keep existing one
     const chatId = options.chatId || this.eventManager.getChatId() || this.eventManager.generateChatId();
     this.eventManager.setChatId(chatId);
 
-    // Log user message
-    this.eventManager.logUserMessage(message, { chatId });
+    // Log user message (skip if tool followup)
+    if (!options._isToolFollowUp) {
+      this.eventManager.logUserMessage(message, { chatId });
+    }
 
     // Create task
     const task = this.taskManager.addTask({
-      type: 'chat',
+      type: options._isToolFollowUp ? 'tool_followup' : 'chat',
       status: 'pending',
       input: typeof message === 'string' ? message : JSON.stringify(message)
     });
@@ -221,19 +237,21 @@ export class Agentify {
 
     try {
       // Update thinking status
-      this.thinkingTracker.startThinking('Preparing request');
-      this.eventManager.logThinkingStarted('Preparing request', { chatId });
+      this.thinkingTracker.startThinking(options._isToolFollowUp ? 'Processing tool results' : 'Preparing request');
+      this.eventManager.logThinkingStarted(options._isToolFollowUp ? 'Processing tool results' : 'Preparing request', { chatId });
 
-      // Add user message to current session
-      const userMessage = typeof message === 'string' 
-        ? { role: 'user', content: message }
-        : message;
-      
-      this.messages.push(userMessage);
+      // Add user message to current session (skip if tool followup)
+      if (!options._isToolFollowUp && message) {
+        const userMessage = typeof message === 'string' 
+          ? { role: 'user', content: message }
+          : message;
+        
+        this.messages.push(userMessage);
 
-      // Save to persistent history if enabled
-      if (this.useHistory) {
-        this.chatHistoryManager.addMessage(chatId, userMessage);
+        // Save to persistent history if enabled
+        if (this.useHistory) {
+          this.chatHistoryManager.addMessage(chatId, userMessage);
+        }
       }
 
       // Build messages for API
@@ -247,21 +265,32 @@ export class Agentify {
         );
         messagesToSend = historyMessages;
       } else {
-        // Use only current session messages
-        messagesToSend = this.messages.map(msg => ({
-          role: msg.role,
-          content: msg.content
-        }));
+        // Use only current session messages (preserve all fields for tool messages)
+        messagesToSend = this.messages.map(msg => {
+          const formatted = { role: msg.role, content: msg.content };
+          if (msg.tool_calls) formatted.tool_calls = msg.tool_calls;
+          if (msg.tool_call_id) formatted.tool_call_id = msg.tool_call_id;
+          return formatted;
+        });
       }
-
-      // Format messages with system instruction
-      const instruction = this.instructionManager.getInstruction();
-      const formattedMessages = formatMessages(messagesToSend, instruction);
 
       // Get tool definitions
       const tools = this.toolManager.getToolCount() > 0
         ? this.toolManager.getToolDefinitions(this.configManager.get('provider'))
         : null;
+
+      // Build system instruction with tool info
+      let instruction = this.instructionManager.getInstruction();
+      if (tools && tools.length > 0) {
+        const toolsList = tools.map(t => {
+          const fn = t.function || t;
+          return `- ${fn.name}: ${fn.description}`;
+        }).join('\n');
+        instruction = instruction + `\n\nAvailable tools:\n${toolsList}\n\nUse these tools when appropriate to help answer user questions.`;
+      }
+
+      // Format messages with system instruction
+      const formattedMessages = formatMessages(messagesToSend, instruction);
 
       // Format request
       this.thinkingTracker.setAction('Formatting request');
@@ -326,6 +355,7 @@ export class Agentify {
     this.eventManager.logEvent('stream_started', { chatId });
 
     const provider = this.configManager.get('provider');
+    const currentRound = options._toolRound || 0;
     
     const callbacks = {
       onToken: (token) => {
@@ -350,19 +380,35 @@ export class Agentify {
           options.onToolCall(toolCall);
         }
 
+        // Parse arguments if string
+        let parsedArgs = toolCall.arguments;
+        if (typeof parsedArgs === 'string') {
+          try {
+            parsedArgs = JSON.parse(parsedArgs);
+          } catch (e) {
+            const errorMsg = `Failed to parse tool arguments: ${e.message}`;
+            this.eventManager.logError(new Error(errorMsg), 'tool', { chatId });
+            return {
+              success: false,
+              error: errorMsg,
+              toolName: toolCall.name
+            };
+          }
+        }
+
         // Execute tool if handler exists
         if (this.toolManager.hasTool(toolCall.name)) {
           const toolStartTime = Date.now();
           try {
             const result = await this.toolManager.executeTool(
               toolCall.name,
-              toolCall.arguments
+              parsedArgs
             );
             
             // Log tool call completed
             this.eventManager.logToolCallCompleted(
               toolCall.name,
-              toolCall.arguments,
+              parsedArgs,
               result.result,
               Date.now() - toolStartTime,
               { chatId }
@@ -370,17 +416,30 @@ export class Agentify {
             
             return result;
           } catch (error) {
-            // Log tool call failed
             this.eventManager.logToolCallFailed(
               toolCall.name,
-              toolCall.arguments,
+              parsedArgs,
               error,
               { chatId }
             );
+            this.eventManager.logError(error, 'tool', { chatId });
             
-            console.error('Tool execution error:', error);
-            throw error;
+            // Return error instead of throwing - let model handle it
+            return {
+              success: false,
+              error: error.message || String(error),
+              toolName: toolCall.name
+            };
           }
+        } else {
+          // Tool not found - return error instead of throwing
+          const errorMsg = `Tool "${toolCall.name}" not found. Available tools: ${Array.from(this.toolManager.getAllTools().map(t => t.name)).join(', ')}`;
+          this.eventManager.logError(new Error(errorMsg), 'tool', { chatId });
+          return {
+            success: false,
+            error: errorMsg,
+            toolName: toolCall.name
+          };
         }
       },
       onThinking: (thought) => {
@@ -445,7 +504,55 @@ export class Agentify {
       }
     };
 
-    return await this.streamHandler.handleStream(response, callbacks, provider);
+    const streamResult = await this.streamHandler.handleStream(response, callbacks, provider);
+    
+    // If we have tool results, send them back to model for continuation
+    if (streamResult.toolResults && streamResult.toolResults.length > 0) {
+      this.thinkingTracker.setAction('Sending tool results to model');
+      
+      // Add assistant message with tool_calls
+      const assistantWithTools = {
+        role: 'assistant',
+        content: streamResult.content || null,
+        tool_calls: streamResult.toolCalls.map((tc, i) => ({
+          id: tc.id || `call_${i}`,
+          type: 'function',
+          function: {
+            name: tc.name,
+            arguments: typeof tc.arguments === 'string' ? tc.arguments : JSON.stringify(tc.arguments)
+          }
+        }))
+      };
+      this.messages.push(assistantWithTools);
+      if (this.useHistory) {
+        this.chatHistoryManager.addMessage(chatId, assistantWithTools);
+      }
+      
+      // Add tool results
+      for (const { toolCall, result: toolResult } of streamResult.toolResults) {
+        const toolMessage = {
+          role: 'tool',
+          tool_call_id: toolCall.id || `call_${streamResult.toolResults.indexOf({ toolCall, result: toolResult })}`,
+          content: JSON.stringify(toolResult.success !== false ? toolResult.result : { error: toolResult.error })
+        };
+        this.messages.push(toolMessage);
+        if (this.useHistory) {
+          this.chatHistoryManager.addMessage(chatId, toolMessage);
+        }
+      }
+      
+      // Continue conversation with tool results
+      // Model may call more tools or provide final answer
+      return await this.chat('', {
+        ...options,
+        chatId,
+        _isToolFollowUp: true,
+        _toolRound: currentRound + 1
+      });
+    }
+    
+    // No tool calls - this is final answer
+    return streamResult;
   }
 
   /**

@@ -9,6 +9,7 @@ export class StreamHandler {
     this.errorManager = errorManager;
     this.buffer = '';
     this.isStreaming = false;
+    this.toolCallsAccumulator = {};
   }
 
   /**
@@ -17,6 +18,7 @@ export class StreamHandler {
   async handleStream(response, callbacks = {}, provider = 'openai') {
     this.isStreaming = true;
     this.buffer = '';
+    this.toolCallsAccumulator = {};
 
     const {
       onToken = () => {},
@@ -32,7 +34,9 @@ export class StreamHandler {
       
       let fullContent = '';
       let toolCalls = [];
+      let toolResults = [];
       let thinkingContent = '';
+      let finishReason = 'stop';
 
       while (this.isStreaming) {
         const { done, value } = await reader.read();
@@ -56,7 +60,13 @@ export class StreamHandler {
             onThinking(formatThinkingContent(item.content));
           } else if (item.type === 'tool_call') {
             toolCalls.push(item.data);
-            onToolCall(item.data);
+            const toolResult = onToolCall(item.data);
+            if (toolResult && typeof toolResult.then === 'function') {
+              const result = await toolResult;
+              toolResults.push({ toolCall: item.data, result });
+            }
+          } else if (item.type === 'finish') {
+            finishReason = item.reason || 'stop';
           } else if (item.type === 'error') {
             throw this.errorManager.createStreamError(
               'Stream error received',
@@ -70,8 +80,9 @@ export class StreamHandler {
       const result = {
         content: fullContent,
         toolCalls,
+        toolResults,
         thinkingContent,
-        finishReason: 'stop'
+        finishReason
       };
 
       onComplete(result);
@@ -157,20 +168,49 @@ export class StreamHandler {
               });
             }
 
-            // Tool calls
+            // Tool calls (accumulate chunks)
             if (choice.delta?.tool_calls) {
               for (const toolCall of choice.delta.tool_calls) {
-                if (toolCall.function) {
+                const index = toolCall.index ?? 0;
+                const id = toolCall.id;
+                
+                if (!this.toolCallsAccumulator[index]) {
+                  this.toolCallsAccumulator[index] = {
+                    id: id || '',
+                    name: '',
+                    arguments: ''
+                  };
+                }
+                
+                if (id) {
+                  this.toolCallsAccumulator[index].id = id;
+                }
+                
+                if (toolCall.function?.name) {
+                  this.toolCallsAccumulator[index].name = toolCall.function.name;
+                }
+                
+                if (toolCall.function?.arguments) {
+                  this.toolCallsAccumulator[index].arguments += toolCall.function.arguments;
+                }
+              }
+            }
+            
+            // When tool_calls finish, emit them
+            if (choice.finish_reason === 'tool_calls') {
+              for (const [index, accumulated] of Object.entries(this.toolCallsAccumulator)) {
+                if (accumulated.name) {
                   processed.push({
                     type: 'tool_call',
                     data: {
-                      id: toolCall.id,
-                      name: toolCall.function.name,
-                      arguments: toolCall.function.arguments
+                      id: accumulated.id,
+                      name: accumulated.name,
+                      arguments: accumulated.arguments
                     }
                   });
                 }
               }
+              this.toolCallsAccumulator = {};
             }
 
             // Finish reason
