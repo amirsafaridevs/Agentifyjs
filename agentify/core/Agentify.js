@@ -199,22 +199,58 @@ export class Agentify {
   async chat(message, options = {}) {
     // Skip validation for tool followup (message can be empty)
     if (!options._isToolFollowUp) {
-      validateMessage(message);
+      try {
+        validateMessage(message);
+      } catch (validationError) {
+        // Validation failed - return helpful error message
+        if (options.onError) {
+          options.onError(validationError);
+        }
+        return {
+          content: `I encountered a validation error: ${validationError.message}. Please provide a valid message.`,
+          error: validationError,
+          toolCalls: [],
+          finishReason: 'error'
+        };
+      }
     }
 
     // Validate configuration
-    this.configManager.validateRequired();
+    try {
+      this.configManager.validateRequired();
+    } catch (configError) {
+      if (options.onError) {
+        options.onError(configError);
+      }
+      return {
+        content: `Configuration error: ${configError.message}. Please check API key and model settings.`,
+        error: configError,
+        toolCalls: [],
+        finishReason: 'error'
+      };
+    }
 
     // Prevent infinite tool call loops
     const maxToolRounds = options.maxToolRounds || 10;
     const currentRound = options._toolRound || 0;
     
     if (currentRound >= maxToolRounds) {
-      throw this.errorManager.createSystemError(
-        `Maximum tool call rounds (${maxToolRounds}) exceeded`,
+      const loopError = this.errorManager.createSystemError(
+        `Maximum tool call rounds (${maxToolRounds}) exceeded. This may indicate a tool calling loop.`,
         'MAX_TOOL_ROUNDS_EXCEEDED',
         { maxToolRounds, currentRound }
       );
+      
+      if (options.onError) {
+        options.onError(loopError);
+      }
+      
+      return {
+        content: `I've reached the maximum number of tool calls (${maxToolRounds}). Let me provide you with what I have so far instead of continuing the loop.`,
+        error: loopError,
+        toolCalls: [],
+        finishReason: 'max_rounds'
+      };
     }
 
     // Generate or use provided chat ID, or keep existing one
@@ -343,6 +379,35 @@ export class Agentify {
         options.onError(error);
       }
 
+      // Determine if this is a recoverable error
+      const isRecoverable = error.code !== 'ECONNREFUSED' && 
+                           error.code !== 'ENOTFOUND' && 
+                           error.name !== 'TypeError';
+
+      // Build helpful error response
+      let errorContent = `I encountered an error: ${error.message}`;
+      
+      if (error.code === 401 || error.code === 'UNAUTHORIZED') {
+        errorContent = 'Authentication failed. Please check your API key.';
+      } else if (error.code === 429 || error.code === 'RATE_LIMIT') {
+        errorContent = 'Rate limit exceeded. Please wait a moment and try again.';
+      } else if (error.code === 500 || error.code === 'SERVER_ERROR') {
+        errorContent = 'The AI service is experiencing issues. Please try again in a moment.';
+      } else if (isRecoverable) {
+        errorContent += '\n\nWould you like to try rephrasing your request or asking something else?';
+      }
+
+      // Return error as response instead of throwing (for recoverable errors)
+      if (isRecoverable || options._isToolFollowUp) {
+        return {
+          content: errorContent,
+          error: error,
+          toolCalls: [],
+          finishReason: 'error'
+        };
+      }
+
+      // For critical errors, still throw
       throw error;
     }
   }

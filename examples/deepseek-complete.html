@@ -253,8 +253,6 @@
                     if (status.isThinking) {
                         thinkingDiv.style.display = 'block';
                         thinkingDiv.textContent = `🧠 ${status.currentAction} (${status.elapsedTime}ms)`;
-                    } else {
-                        thinkingDiv.style.display = 'none';
                     }
                 });
 
@@ -333,7 +331,7 @@
                 let response = '';
                 const msgDiv = addMessageToChat('', 'assistant');
 
-                await agent.chat(message, {
+                const result = await agent.chat(message, {
                     chatId: currentChatId,
                     onToken: (token) => {
                         response += token;
@@ -351,19 +349,48 @@
                     }
                 });
 
+                // Handle error responses (returned instead of thrown)
+                if (result && result.error) {
+                    if (!msgDiv.textContent) {
+                        msgDiv.textContent = result.content || result.error.message;
+                    }
+                    logError(result.error);
+                }
+
             } catch (error) {
                 console.error('Chat error:', error);
                 logError(error);
 
-                let errorMsg = 'Error: ' + error.message;
+                // Build detailed error message for the model
+                let errorContext = `An error occurred: ${error.message || error}`;
+                if (error.code) {
+                    errorContext += ` (Error Code: ${error.code})`;
+                }
+                
                 const rb = error.details?.responseBody;
                 if (rb?.error?.message) {
-                    errorMsg += '\n\nServer: ' + rb.error.message;
+                    errorContext += `\nServer response: ${rb.error.message}`;
                 }
-                if (error.code) {
-                    errorMsg += '\n(Code: ' + error.code + ')';
+                
+                // Suggest recovery actions
+                errorContext += '\n\nPlease try one of the following:';
+                errorContext += '\n1. Rephrase your request';
+                errorContext += '\n2. Use available tools if applicable';
+                errorContext += '\n3. Ask for clarification';
+
+                // Send error as user message so model can respond
+                try {
+                    const errorResponse = await agent.chat(errorContext, {
+                        chatId: currentChatId,
+                        onToken: (token) => {
+                            response += token;
+                            msgDiv.textContent = response;
+                        }
+                    });
+                } catch (retryError) {
+                    // If even error recovery fails, show in UI
+                    msgDiv.textContent = `System Error: ${error.message}\n\nPlease refresh and try again.`;
                 }
-                addMessageToChat(errorMsg, 'assistant');
             }
         };
 
