@@ -146,6 +146,32 @@ agent.configure({
     apiKey: 'your-api-key',
     temperature: 0.7
 });
+
+// Configuration management
+agent.resetConfiguration();      // Reset to defaults (keeps API key)
+agent.clearSensitiveData();      // Clear API key and headers
+agent.clearAllStorage();         // Clear all storage data
+```
+
+### Complete Configuration API
+
+| Method | Description |
+|--------|-------------|
+| `setModel(model)` | Set AI model name |
+| `setApiUrl(url)` | Set API endpoint |
+| `setApiKey(key)` | Set API key |
+| `setProvider(provider)` | Set provider ('openai', 'anthropic', etc.) |
+| `setTemperature(temp)` | Set temperature (0-2) |
+| `setMaxTokens(tokens)` | Set max response tokens |
+| `setUseHistory(bool)` | Enable/disable history saving |
+| `setIncludeHistory(bool)` | Enable/disable sending history to model |
+| `setMaxHistoryMessages(num)` | Set context window size (default: 50) |
+| `configure(config)` | Set multiple config options |
+| `resetConfiguration()` | Reset to default settings |
+| `clearSensitiveData()` | Clear API key and headers |
+| `clearAllStorage()` | Delete all stored data |
+| `getStorageInfo()` | Get storage usage details |
+
 ```
 
 ## 🔧 Tool System
@@ -378,11 +404,22 @@ const count = agent.getChatMessageCount('chat_123');
 const newChatId = agent.generateNewChatId();
 // Returns: "chat_1234567890_abc123"
 
-// Set current chat ID
-agent.setChatId('chat_123');
+// Set current chat ID (for subsequent messages)
+agent.setChatId('my-custom-chat-id');
+
+// Or use any custom string
+agent.setChatId('user_123_session_456');
+agent.setChatId('support-ticket-789');
 
 // Get current chat ID
 const current = agent.getCurrentChatId();
+
+// Update entire chat history (replace all messages)
+agent.updateChatHistory('chat_123', [
+    { role: 'user', content: 'Hello' },
+    { role: 'assistant', content: 'Hi there!' },
+    { role: 'user', content: 'How are you?' }
+]);
 ```
 
 ### Import/Export
@@ -428,6 +465,200 @@ agent.clearAllChatHistories();
 
 // Get context window (formatted for API)
 const context = agent.getContextWindow('chat_123', 30);
+```
+
+## 🗄️ Complete Storage & Configuration Management
+
+### Get Storage Information
+
+```javascript
+// Get complete storage usage
+const storageInfo = agent.getStorageInfo();
+
+console.log('Tasks:', storageInfo.tasks.count, '-', storageInfo.tasks.sizeFormatted);
+console.log('Events:', storageInfo.events.count, '-', storageInfo.events.sizeFormatted);
+console.log('Chat Histories:', storageInfo.chatHistories.count, 'chats,', 
+            storageInfo.chatHistories.messages, 'messages -', 
+            storageInfo.chatHistories.sizeFormatted);
+console.log('Total Storage:', storageInfo.total.sizeFormatted);
+
+// Example output:
+// Tasks: 45 - 128 KB
+// Events: 523 - 256 KB
+// Chat Histories: 12 chats, 347 messages - 512 KB
+// Total Storage: 896 KB
+```
+
+### Clear All Storage
+
+```javascript
+// Clear everything (tasks, events, chat histories, current history, error log)
+// ⚠️ WARNING: This deletes all data!
+agent.clearAllStorage();
+
+// Or clear individually
+agent.clearTasks();           // Clear task history
+agent.clearEvents();          // Clear event log
+agent.clearAllChatHistories(); // Clear all conversations
+agent.clearHistory();         // Clear current session history
+agent.clearErrorLog();        // Clear error log
+```
+
+### Configuration Management
+
+```javascript
+// Reset configuration to defaults
+// (keeps API key and provider for security)
+agent.resetConfiguration();
+// Resets: temperature → 0.7, maxTokens → null, stream → true
+
+// Clear sensitive data (API key, custom headers)
+agent.clearSensitiveData();
+// Sets: apiKey → null, customHeaders → {}
+
+// Full reset (everything except storage)
+agent.resetConfiguration();
+agent.clearSensitiveData();
+
+// Then reconfigure
+agent
+    .setApiKey('new-key')
+    .setModel('gpt-4')
+    .setTemperature(0.8);
+```
+
+### Storage Cleanup Strategy
+
+```javascript
+// Strategy 1: Regular automated cleanup
+setInterval(() => {
+    const info = agent.getStorageInfo();
+    
+    // If total storage > 2MB
+    if (info.total.sizeBytes > 2 * 1024 * 1024) {
+        // Export important data
+        const tasks = agent.exportTasks('json');
+        const events = agent.exportEvents('json');
+        sendToBackend({ tasks, events });
+        
+        // Clear old data
+        agent.clearTasks();
+        agent.deleteOldEvents(sevenDaysAgo);
+    }
+}, 24 * 60 * 60 * 1000);  // Daily
+
+// Strategy 2: Manual cleanup with user confirmation
+function cleanupStorage() {
+    const info = agent.getStorageInfo();
+    
+    if (confirm(`Clear ${info.total.sizeFormatted} of storage data?`)) {
+        agent.clearAllStorage();
+        alert('Storage cleared!');
+    }
+}
+
+// Strategy 3: Selective cleanup
+function smartCleanup() {
+    const chatStats = agent.getChatHistoryStats();
+    const allChats = agent.getAllHistoryChatIds();
+    
+    // Keep only last 5 chats
+    if (allChats.length > 5) {
+        const oldChats = allChats.slice(0, -5);
+        oldChats.forEach(chatId => {
+            agent.clearChatHistory(chatId);
+        });
+    }
+    
+    // Clear old events (older than 30 days)
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    agent.deleteOldEvents(thirtyDaysAgo.toISOString());
+    
+    // Clear completed tasks
+    const tasks = agent.getTasks({ status: 'completed' });
+    // Export first
+    const data = agent.exportTasks('json');
+    sendToBackend(data);
+    agent.clearTasks();
+}
+```
+
+### Update Chat History Manually
+
+```javascript
+// Scenario 1: Prepopulate conversation
+agent.updateChatHistory('onboarding_chat', [
+    { role: 'assistant', content: 'Welcome! I\'m your AI assistant.' },
+    { role: 'user', content: 'Thanks! I need help with...' },
+    { role: 'assistant', content: 'I\'d be happy to help!' }
+]);
+
+// Scenario 2: Import from backend
+const savedConversation = await fetchFromBackend('chat_123');
+agent.updateChatHistory('chat_123', savedConversation.messages);
+
+// Scenario 3: Manually construct conversation
+const manualHistory = [
+    { 
+        role: 'system', 
+        content: 'You are a helpful assistant specializing in...' 
+    },
+    { role: 'user', content: 'Hello!' },
+    { role: 'assistant', content: 'Hi! How can I help?' }
+];
+agent.updateChatHistory('custom_chat', manualHistory);
+
+// Then continue the conversation
+await agent.continueChat('custom_chat', 'Tell me more');
+```
+
+### Configuration Reset Examples
+
+```javascript
+// Example 1: Switch between projects
+function switchProject(projectConfig) {
+    // Clear current config
+    agent.clearSensitiveData();
+    agent.resetConfiguration();
+    
+    // Load new config
+    agent.configure(projectConfig);
+}
+
+// Example 2: Logout user
+function logoutUser() {
+    // Export user data first
+    const chatIds = agent.getAllHistoryChatIds();
+    const userData = chatIds.map(id => ({
+        chatId: id,
+        data: agent.exportChatHistory(id, 'json')
+    }));
+    
+    sendToBackend(userData);
+    
+    // Clear everything
+    agent.clearAllStorage();
+    agent.clearSensitiveData();
+}
+
+// Example 3: Security - clear after inactivity
+let inactivityTimer;
+function resetInactivityTimer() {
+    clearTimeout(inactivityTimer);
+    inactivityTimer = setTimeout(() => {
+        // User inactive for 30 minutes
+        agent.clearSensitiveData();
+        alert('Session expired for security. Please re-enter API key.');
+    }, 30 * 60 * 1000);
+}
+
+// Example 4: Testing - reset between tests
+beforeEach(() => {
+    agent.clearAllStorage();
+    agent.resetConfiguration();
+    agent.setApiKey(TEST_API_KEY);
+});
 ```
 
 ## 📊 Event Logging System
@@ -1523,6 +1754,109 @@ The `examples/` directory contains complete working demos:
    ```
 
 3. Enter your API key and start chatting!
+
+## 📚 Quick API Reference
+
+### Core Methods
+
+| Category | Method | Description |
+|----------|--------|-------------|
+| **Chat** | `chat(message, options)` | Send message to AI |
+| | `startNewChat(message)` | Start new conversation |
+| | `continueChat(chatId, message)` | Continue existing chat |
+| **Config** | `setModel(model)` | Set AI model |
+| | `setApiKey(key)` | Set API key |
+| | `setApiUrl(url)` | Set API endpoint |
+| | `setProvider(provider)` | Set provider |
+| | `setTemperature(temp)` | Set temperature |
+| | `configure(config)` | Batch configuration |
+| | `resetConfiguration()` | Reset to defaults |
+| | `clearSensitiveData()` | Clear API key/headers |
+| **Tools** | `addTool(tool)` | Register single tool |
+| | `addTools(tools)` | Register multiple tools |
+| | `toolManager.hasTool(name)` | Check if tool exists |
+| | `toolManager.getAllTools()` | Get all tools |
+| | `toolManager.removeTool(name)` | Remove tool |
+| **History** | `getChatHistory(chatId)` | Get chat messages |
+| | `getLastChatMessages(chatId, n)` | Get last N messages |
+| | `updateChatHistory(chatId, msgs)` | Replace chat history |
+| | `clearChatHistory(chatId)` | Clear specific chat |
+| | `clearAllChatHistories()` | Clear all chats |
+| | `exportChatHistory(id, format)` | Export chat (json/text/md/html) |
+| | `importChatHistory(id, data, fmt)` | Import chat |
+| | `searchChatMessages(id, query)` | Search in chat |
+| | `getAllHistoryChatIds()` | Get all chat IDs |
+| | `getChatHistoryStats()` | Get history statistics |
+| **Chat ID** | `generateNewChatId()` | Create unique chat ID |
+| | `setChatId(chatId)` | Set current chat ID |
+| | `getCurrentChatId()` | Get current chat ID |
+| **Events** | `getEvents(options)` | Get all events |
+| | `getEventsByType(type)` | Filter by type |
+| | `getEventsByChatId(chatId)` | Filter by chat |
+| | `getChatTimeline(chatId)` | Get chat timeline |
+| | `getEventStats()` | Get statistics |
+| | `exportEvents(format)` | Export (json/csv/table) |
+| | `clearEvents()` | Clear all events |
+| | `deleteEventsByChatId(chatId)` | Delete chat events |
+| | `deleteOldEvents(date)` | Delete before date |
+| **Tasks** | `getTasks(options)` | Get task list |
+| | `getTaskStats()` | Get statistics |
+| | `exportTasks(format)` | Export (json/csv/text) |
+| | `clearTasks()` | Clear all tasks |
+| **Storage** | `getStorageInfo()` | Get usage details |
+| | `clearAllStorage()` | **Clear everything!** |
+| **Thinking** | `onThinkingChange(callback)` | Subscribe to status |
+| | `getThinkingStatus()` | Get current status |
+| **Instruction** | `setInstruction(text)` | Set system instruction |
+| | `loadInstructionFromFile(file)` | Load from file |
+| | `getInstruction()` | Get instruction |
+| **Other** | `getHistory()` | Get current session history |
+| | `clearHistory()` | Clear session history |
+| | `getStatus()` | Get agent status |
+| | `getErrorLog()` | Get error history |
+| | `clearErrorLog()` | Clear errors |
+
+### Chat Options
+
+```javascript
+await agent.chat(message, {
+    chatId: 'chat_123',           // Conversation ID
+    stream: true,                 // Enable streaming
+    maxToolRounds: 10,            // Max tool call iterations
+    
+    // Callbacks
+    onToken: (token) => {},       // Each token received
+    onToolCall: (call) => {},     // Tool being executed
+    onThinking: (thought) => {},  // Thinking content
+    onComplete: (result) => {},   // Response complete
+    onError: (error) => {}        // Error occurred
+});
+```
+
+### Event Types
+
+- `user_message_sent` - User message
+- `assistant_message_started` - AI starts responding
+- `assistant_message_completed` - AI finishes
+- `tool_call_initiated` - Tool starts
+- `tool_call_completed` - Tool succeeds
+- `tool_call_failed` - Tool fails
+- `api_request_sent` - API call sent
+- `api_response_received` - API responds
+- `error_occurred` - Error happens
+- `thinking_started` - Thinking begins
+- `stream_started` - Stream starts
+
+### Error Codes
+
+| Category | Codes |
+|----------|-------|
+| **System** | `SYS_CONFIG_INVALID`, `SYS_CONFIG_MISSING`, `SYS_VALIDATION_FAILED`, `MAX_TOOL_ROUNDS_EXCEEDED` |
+| **Network** | `NET_CONNECTION_FAILED`, `NET_TIMEOUT`, `NET_RATE_LIMIT`, `NET_UNAUTHORIZED`, `NET_SERVER_ERROR` |
+| **Model** | `MDL_INVALID_RESPONSE`, `MDL_RESPONSE_PARSE_FAILED`, `MDL_CONTEXT_LENGTH_EXCEEDED` |
+| **Tool** | `TOOL_NOT_FOUND`, `TOOL_EXEC_FAILED`, `TOOL_INVALID_PARAMS` |
+| **Stream** | `STR_PARSE_FAILED`, `STR_CONNECTION_LOST`, `STR_INVALID_FORMAT` |
+| **Storage** | `STG_QUOTA_EXCEEDED`, `STG_NOT_AVAILABLE`, `STG_WRITE_FAILED` |
 
 ## 🤝 Contributing
 

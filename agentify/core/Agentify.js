@@ -1054,6 +1054,85 @@ export class Agentify {
   getContextWindow(chatId, maxMessages = null) {
     return this.chatHistoryManager.getContextWindow(chatId, maxMessages || this.maxHistoryMessages);
   }
+
+  // ==================== Storage & Configuration Management ====================
+
+  /**
+   * Clear all storage (tasks, events, chat histories)
+   * WARNING: This will delete all data!
+   */
+  clearAllStorage() {
+    this.clearTasks();
+    this.clearEvents();
+    this.clearAllChatHistories();
+    this.clearHistory();
+    this.clearErrorLog();
+    return this;
+  }
+
+  /**
+   * Reset configuration to defaults
+   * Note: Does not clear API key for security
+   */
+  resetConfiguration() {
+    this.configManager.set('temperature', 0.7);
+    this.configManager.set('maxTokens', null);
+    this.configManager.set('stream', true);
+    this.configManager.set('model', null);
+    return this;
+  }
+
+  /**
+   * Clear sensitive data (API key, custom headers)
+   */
+  clearSensitiveData() {
+    this.configManager.set('apiKey', null);
+    this.configManager.set('customHeaders', {});
+    return this;
+  }
+
+  /**
+   * Get storage usage information
+   */
+  getStorageInfo() {
+    const taskStats = this.getTaskStats();
+    const eventStats = this.getEventStats();
+    const chatStats = this.getChatHistoryStats();
+
+    return {
+      tasks: {
+        count: taskStats.totalTasks,
+        sizeBytes: taskStats.storageUsed,
+        sizeFormatted: taskStats.storageUsedFormatted
+      },
+      events: {
+        count: eventStats.totalEvents,
+        sizeBytes: eventStats.storageUsed,
+        sizeFormatted: eventStats.storageUsedFormatted
+      },
+      chatHistories: {
+        count: chatStats.totalChats,
+        messages: chatStats.totalMessages,
+        sizeBytes: chatStats.storageUsed,
+        sizeFormatted: chatStats.storageUsedFormatted
+      },
+      total: {
+        sizeBytes: taskStats.storageUsed + eventStats.storageUsed + chatStats.storageUsed,
+        sizeFormatted: this.formatBytes(taskStats.storageUsed + eventStats.storageUsed + chatStats.storageUsed)
+      }
+    };
+  }
+
+  /**
+   * Format bytes to human readable
+   */
+  formatBytes(bytes) {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+  }
 }
 
 export default Agentify;
